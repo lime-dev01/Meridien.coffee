@@ -6,12 +6,10 @@
   <title>Méridien — Le café comme un voyage</title>
   <meta name="description" content="Méridien, torréfacteur nomade. Du grain à la tasse, d'un méridien à l'autre." />
 
-  <!-- Typographies -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
 
-  <!-- CSS -->
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -51,7 +49,7 @@
     </div>
   </section>
 
-  <!-- Section Origine (placeholder pour l'instant) -->
+  <!-- Section Origine -->
   <section class="origine" id="origine">
     <p class="section__eyebrow">01 — Origine</p>
     <h2 class="section__title">Là où tout commence.</h2>
@@ -61,7 +59,7 @@
     </p>
   </section>
 
-  <!-- Section Voyage (placeholder) -->
+  <!-- Section Voyage -->
   <section class="voyage" id="voyage">
     <p class="section__eyebrow">02 — Voyage</p>
     <h2 class="section__title">D'un méridien à l'autre.</h2>
@@ -70,22 +68,28 @@
     </p>
   </section>
 
-  <!-- Section Produits (placeholder) -->
+  <!-- Section Produits -->
   <section class="produits" id="produits">
     <p class="section__eyebrow">03 — Les cafés</p>
     <h2 class="section__title">Trois voyages, trois cafés.</h2>
     <div class="produits__grid">
       <article class="produit">
+        <div class="produit__num">01</div>
         <h3>Yirgacheffe</h3>
-        <p>Éthiopie · 1 900 m · Floral, bergamote</p>
+        <p class="produit__origine">Éthiopie · 1 900 m</p>
+        <p class="produit__notes">Floral, bergamote, jasmin</p>
       </article>
       <article class="produit">
+        <div class="produit__num">02</div>
         <h3>Huila</h3>
-        <p>Colombie · 1 750 m · Caramel, noisette</p>
+        <p class="produit__origine">Colombie · 1 750 m</p>
+        <p class="produit__notes">Caramel, noisette, cacao</p>
       </article>
       <article class="produit">
+        <div class="produit__num">03</div>
         <h3>Cerrado</h3>
-        <p>Brésil · 1 100 m · Chocolat, noix</p>
+        <p class="produit__origine">Brésil · 1 100 m</p>
+        <p class="produit__notes">Chocolat noir, noix du Brésil</p>
       </article>
     </div>
   </section>
@@ -95,6 +99,11 @@
     <p class="footer__quote">« Le café est un prétexte. Le voyage est la raison. »</p>
     <p class="footer__copy">© 2025 Méridien — Torréfacteur nomade</p>
   </footer>
+
+  <!-- Bibliothèques CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/lenis@1.1.14/dist/lenis.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
 
   <!-- JS -->
   <script src="main.js"></script>
