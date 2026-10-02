@@ -2,7 +2,8 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0E0B08" />
   <title>Méridien — Le café comme un voyage</title>
   <meta name="description" content="Méridien, torréfacteur nomade. Du grain à la tasse, d'un méridien à l'autre." />
 
@@ -35,6 +36,9 @@
   <!-- Canvas 3D FIXE -->
   <canvas id="webgl"></canvas>
 
+  <!-- Voile global unique (léger) -->
+  <div class="veil" aria-hidden="true"></div>
+
   <!-- Hero -->
   <section class="hero" id="hero">
     <div class="hero__content">
@@ -61,7 +65,7 @@
     </p>
   </section>
 
-  <!-- Section Voyage (le globe 3D apparaît ici) -->
+  <!-- Section Voyage (globe 3D) -->
   <section class="voyage" id="voyage">
     <p class="section__eyebrow">02 — Voyage</p>
     <h2 class="section__title">D'un méridien<br />à l'autre.</h2>
