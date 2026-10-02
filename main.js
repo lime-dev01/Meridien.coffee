@@ -61,32 +61,20 @@ renderer.setPixelRatio(PERF.pixelRatio);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 
-/* ============================================
-   LIGHTS — éclairage plus uniforme (fix voile noir)
-   ============================================ */
+/* ---------- Lights ---------- */
 scene.add(new THREE.AmbientLight(0xffffff, 0.75));
-
-/* Hemisphere = lumière douce venant du ciel + sol */
 const hemi = new THREE.HemisphereLight(0xFFF2D6, 0x3a2416, 0.6);
 scene.add(hemi);
-
 const key = new THREE.DirectionalLight(0xfff2d6, 1.3);
 key.position.set(3, 4, 3); scene.add(key);
-
-/* Fill depuis la caméra */
 const fill = new THREE.DirectionalLight(0xF2E9DC, 0.85);
 fill.position.set(0, 1, 5); scene.add(fill);
-
-/* Fill du dessus */
 const topFill = new THREE.DirectionalLight(0xF2E9DC, 0.5);
 topFill.position.set(0, 5, 1); scene.add(topFill);
-
 const gold = new THREE.PointLight(0xC9A227, 5, 14);
 gold.position.set(-2, 1, 3); scene.add(gold);
-
 const rim = new THREE.PointLight(0xFFE5B0, 3, 12);
 rim.position.set(3, 2, -2); scene.add(rim);
-
 const globeLight = new THREE.PointLight(0xC9A227, 4.5, 12);
 globeLight.position.set(2, 2, 3); scene.add(globeLight);
 
@@ -146,7 +134,6 @@ function fbmTexture(size = PERF.fbmSize){
   return tex;
 }
 
-/* Texture radiale (fix carré blanc) */
 function radialTex(){
   const c = document.createElement('canvas');
   c.width = c.height = 128;
@@ -185,21 +172,15 @@ function buildBeanGeometry(){
   for (let i = 0; i < pos.count; i++){
     v.fromBufferAttribute(pos, i);
     v.x *= 0.75; v.y *= 0.85; v.z *= 1.32;
-
-    /* Rainure plus douce (fix voile noir) */
     if (v.x > 0){
       const creaseY = Math.exp(-Math.pow(v.y / 0.22, 2));
       const creaseZ = Math.exp(-Math.pow(v.z / 1.0, 4));
-      v.x -= creaseY * creaseZ * 0.32;   // était 0.45
+      v.x -= creaseY * creaseZ * 0.32;
     }
-
     v.x -= Math.exp(-Math.pow(v.x / 0.5, 2)) * 0.04 * Math.sign(v.x);
-
-    /* Micro-reliefs atténués */
     v.x += Math.sin(v.z * 8 + v.x * 3) * 0.012;
     v.y += Math.cos(v.y * 7 + v.z * 2) * 0.011;
     v.z += Math.sin(v.x * 12 + v.y * 5) * 0.008;
-
     pos.setXYZ(i, v.x, v.y, v.z);
   }
   geo.computeVertexNormals();
@@ -226,7 +207,7 @@ const beanMat = new THREE.MeshPhysicalMaterial({
   sheen: 0.2,
   sheenColor: new THREE.Color(0xC9A227),
   sheenRoughness: 0.9,
-  bumpMap: bump, bumpScale: 0.08,   // ⬅️ était 0.22
+  bumpMap: bump, bumpScale: 0.08,
   transparent: false, opacity: 1,
 });
 
@@ -250,9 +231,11 @@ const earthGeo = new THREE.SphereGeometry(SPHERE_TARGET_RADIUS, PERF.earthSegmen
 const earthMat = new THREE.MeshStandardMaterial({
   color: 0xffffff, roughness: 0.9, metalness: 0.05,
   transparent: true, opacity: 0,
+  depthWrite: true,
 });
 const earth = new THREE.Mesh(earthGeo, earthMat);
 earth.userData.baseOpacity = 1;
+earth.userData.isEarth = true;
 globeInner.add(earth);
 
 const textureLoader = new THREE.TextureLoader();
@@ -263,13 +246,16 @@ textureLoader.load(
   () => { earthMat.color = new THREE.Color(0x2a3a4a); }
 );
 
+/* Atmosphère */
 const atmGeo = new THREE.SphereGeometry(SPHERE_TARGET_RADIUS * 1.15, 32, 32);
 const atmMat = new THREE.MeshBasicMaterial({
   color: 0xC9A227, transparent: true, opacity: 0,
   blending: THREE.AdditiveBlending, side: THREE.BackSide,
+  depthWrite: false,
 });
 const atmosphere = new THREE.Mesh(atmGeo, atmMat);
 atmosphere.userData.baseOpacity = 0.18;
+atmosphere.userData.isAtmosphere = true;
 globeInner.add(atmosphere);
 
 /* Marqueurs */
@@ -291,31 +277,43 @@ const origins = [
 
 const markers = [];
 origins.forEach((o, i) => {
-  const pos = latLonToVec3(o.lat, o.lon, SPHERE_TARGET_RADIUS * 1.03);
+  /* Position légèrement au-dessus de la surface pour éviter le z-fighting */
+  const pos = latLonToVec3(o.lat, o.lon, SPHERE_TARGET_RADIUS * 1.06);
 
-  const mGeo = new THREE.SphereGeometry(0.04, 14, 14);
-  const mMat = new THREE.MeshBasicMaterial({ color: 0xC9A227, transparent: true, opacity: 0 });
+  /* Point doré — depthTest: true pour être correctement occulté par la Terre */
+  const mGeo = new THREE.SphereGeometry(0.038, 14, 14);
+  const mMat = new THREE.MeshBasicMaterial({
+    color: 0xC9A227, transparent: true, opacity: 0,
+    depthTest: true,
+    depthWrite: true,
+  });
   const m = new THREE.Mesh(mGeo, mMat);
   m.position.copy(pos);
   m.userData.baseOpacity = 1;
   m.userData.origin = o.product;
   m.userData.index = i;
+  m.userData.isMarker = true;
   globeInner.add(m);
 
-  const hGeo = new THREE.SphereGeometry(0.09, 14, 14);
+  /* Halo — PAS de depthWrite pour éviter les artefacts, mais depthTest ON */
+  const hGeo = new THREE.SphereGeometry(0.085, 14, 14);
   const hMat = new THREE.MeshBasicMaterial({
-    color: 0xC9A227, transparent: true, opacity: 0, blending: THREE.AdditiveBlending,
+    color: 0xC9A227, transparent: true, opacity: 0,
+    blending: THREE.AdditiveBlending,
+    depthTest: true,
+    depthWrite: false,
   });
   const halo = new THREE.Mesh(hGeo, hMat);
   halo.position.copy(pos);
   halo.userData.baseOpacity = 0.5;
+  halo.userData.isMarker = true;
   globeInner.add(halo);
 
   markers.push({ dot: m, halo });
 });
 
 /* ============================================
-   FLASH (avec texture radiale — plus de carré blanc)
+   FLASH
    ============================================ */
 const flashMat = new THREE.SpriteMaterial({
   map: radialTex(),
@@ -336,6 +334,7 @@ const ringGeo = new THREE.RingGeometry(0.5, 0.6, 64);
 const ringMat = new THREE.MeshBasicMaterial({
   color: 0xC9A227, transparent: true, opacity: 0,
   side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+  depthWrite: false,
 });
 const shockRing = new THREE.Mesh(ringGeo, ringMat);
 shockRing.position.set(0.3, 0, 0);
@@ -361,7 +360,7 @@ const particles = new THREE.Points(pGeo, new THREE.PointsMaterial({
 scene.add(particles);
 
 /* ============================================
-   TIMELINE — TRANSITIONS PROPRES
+   TIMELINE
    ============================================ */
 const tl = gsap.timeline({
   scrollTrigger: {
@@ -373,9 +372,7 @@ const tl = gsap.timeline({
 });
 
 tl
-  /* ==========================================
-     PHASE 1 — Hero → Origine
-     ========================================== */
+  /* PHASE 1 — Hero → Origine */
   .to(beanGroup.rotation, { y: Math.PI * 2, x: 0.4, ease: 'none', duration: 1 }, 0)
   .to(beanGroup.position, { x: START.beanX + 0.6, y: -1.3, z: 0.5, ease: 'none', duration: 1 }, 0)
   .to(beanGroup.scale, { x: 0.85, y: 0.85, z: 0.85, ease: 'none', duration: 1 }, 0)
@@ -383,11 +380,7 @@ tl
   .to(camera, { fov: START.fov - 3, ease: 'power2.inOut', duration: 1, onUpdate: () => camera.updateProjectionMatrix() }, 0)
   .to(lookAtTarget, { x: 0.4, y: -0.3, ease: 'power2.inOut', duration: 1 }, 0)
 
-  /* ==========================================
-     PHASE 2 — MÉTAMORPHOSE grain → globe
-     ========================================== */
-
-  /* 2.1 — Grain accélère, file au centre, reste 100% opaque */
+  /* PHASE 2 — MÉTAMORPHOSE */
   .to(beanGroup.rotation, { y: Math.PI * 5, x: 0.6, ease: 'power2.in', duration: 0.5 }, 1.2)
   .to(beanGroup.position, { x: 0.3, y: 0, z: 0, ease: 'power2.inOut', duration: 0.5 }, 1.2)
   .to(beanGroup.scale, { x: 1, y: 1, z: 1, ease: 'power2.inOut', duration: 0.5 }, 1.2)
@@ -395,14 +388,11 @@ tl
   .to(camera, { fov: START.fov + 1, ease: 'power2.inOut', duration: 0.6, onUpdate: () => camera.updateProjectionMatrix() }, 1.2)
   .to(lookAtTarget, { x: 0.15, y: 0, ease: 'power2.inOut', duration: 0.6 }, 1.2)
 
-  /* 2.2 — Morphing géométrique rapide (grain → sphère), reste opaque */
   .to(state, { morph: 1, ease: 'power3.inOut', duration: 0.35 }, 1.75)
 
-  /* 2.3 — SWAP INSTANTANÉ au moment exact où morph = 1 (invisible) */
   .to(state, { beanOpacity: 0, ease: 'none', duration: 0.02 }, 2.1)
   .to(state, { globeOpacity: 1, ease: 'none', duration: 0.02 }, 2.1)
 
-  /* 2.4 — Flash + onde de choc au moment du swap */
   .to(state, { flash: 0.85, ease: 'power2.out', duration: 0.1 }, 2.05)
   .to(state, { flash: 0, ease: 'power2.in', duration: 0.35 }, 2.15)
   .fromTo(shockRing.scale,
@@ -413,43 +403,31 @@ tl
     { opacity: 0.7, ease: 'power2.out', duration: 0.08 }, 2.1)
   .to(ringMat, { opacity: 0, ease: 'power2.in', duration: 0.4 }, 2.18)
 
-  /* ==========================================
-     PHASE 3 — Voyage (focus globe)
-     ========================================== */
+  /* PHASE 3 — Voyage */
   .to(globeGroup.rotation, { y: Math.PI * 0.9, ease: 'none', duration: 1 }, 2.5)
   .to(cameraBase, { z: 4.4, x: 0.5, y: -0.1, ease: 'power1.inOut', duration: 1 }, 2.5)
   .to(camera, { fov: 40, ease: 'power1.inOut', duration: 1, onUpdate: () => camera.updateProjectionMatrix() }, 2.5)
   .to(lookAtTarget, { x: 0.3, y: 0, ease: 'power1.inOut', duration: 1 }, 2.5)
 
-  /* ==========================================
-     PHASE 4 — SWAP inverse (sphere → grain)
-     ========================================== */
-
-  /* 4.1 — Flash + SWAP INSTANTANÉ au moment où morph repasse à 0 */
+  /* PHASE 4 — SWAP inverse */
   .to(state, { flash: 0.7, ease: 'power2.out', duration: 0.1 }, 3.65)
   .to(state, { flash: 0, ease: 'power2.in', duration: 0.3 }, 3.75)
 
-  /* Le globe reste visible jusqu'à morph = 0, puis swap */
   .to(state, { globeOpacity: 0, ease: 'none', duration: 0.02 }, 3.75)
   .to(state, { beanOpacity: 1, ease: 'none', duration: 0.02 }, 3.75)
 
-  /* 4.2 — Morphing inverse rapide (sphere → grain) */
   .to(state, { morph: 0, ease: 'power3.inOut', duration: 0.35 }, 3.72)
 
-  /* 4.3 — Grain ressort et se repositionne */
   .to(beanGroup.rotation, { y: Math.PI * 7, x: 0.2, ease: 'none', duration: 0.6 }, 4.1)
   .to(beanGroup.position, { x: 2.0, y: -1.8, z: -0.6, ease: 'power2.inOut', duration: 0.6 }, 4.1)
   .to(beanMat.color, { r: 0.32, g: 0.18, b: 0.09, ease: 'power1.inOut', duration: 0.6 }, 4.1)
   .to(beanGroup.scale, { x: 0.55, y: 0.55, z: 0.55, ease: 'power2.inOut', duration: 0.6 }, 4.1)
 
-  /* 4.4 — Caméra recule */
   .to(cameraBase, { z: 6.2, x: 0.5, y: -0.4, ease: 'power2.inOut', duration: 0.6 }, 4.1)
   .to(camera, { fov: 50, ease: 'power2.inOut', duration: 0.6, onUpdate: () => camera.updateProjectionMatrix() }, 4.1)
   .to(lookAtTarget, { x: 0.5, y: -0.4, ease: 'power2.inOut', duration: 0.6 }, 4.1)
 
-  /* ==========================================
-     PHASE 5 — Produits → Footer
-     ========================================== */
+  /* PHASE 5 — Produits → Footer */
   .to(beanGroup.rotation, { y: Math.PI * 9, ease: 'none', duration: 1 }, 4.7)
   .to(beanGroup.position, { x: 1.6, y: -1.2, z: -0.3, ease: 'power1.inOut', duration: 1 }, 4.7)
   .to(state, { beanOpacity: 0.35, ease: 'power2.out', duration: 1 }, 4.7)
@@ -569,8 +547,7 @@ const clock = new THREE.Clock();
 function tick(){
   const t = clock.getElapsedTime();
 
-  /* ===== MORPHING GÉOMÉTRIQUE ===== */
-  /* On morph UNIQUEMENT pendant la transition (pas au repos) */
+  /* ===== MORPHING ===== */
   const isMorphing = state.morph > 0.002 && state.morph < 0.998;
 
   if (isMorphing) {
@@ -593,20 +570,59 @@ function tick(){
   /* ===== Flash ===== */
   flashMat.opacity = state.flash;
 
-  /* ===== Rotation grain ===== */
+  /* ===== Grain ===== */
   if (!isDragging || state.globeOpacity < 0.5) {
     beanGroup.rotation.y += 0.0025;
   }
   beanMat.opacity = state.beanOpacity;
 
-  /* Toggle transparent seulement pendant les fondus (fix z-fighting) */
-  const shouldBeTransparent = state.beanOpacity < 0.98;
-  if (beanMat.transparent !== shouldBeTransparent) {
-    beanMat.transparent = shouldBeTransparent;
+  const beanShouldBeTransparent = state.beanOpacity < 0.98;
+  if (beanMat.transparent !== beanShouldBeTransparent) {
+    beanMat.transparent = beanShouldBeTransparent;
     beanMat.needsUpdate = true;
   }
 
-  /* ===== Rotation globe ===== */
+  /* ===== GLOBE : TRANSPARENCE DYNAMIQUE (fix points noirs) ===== */
+  /* Le globe et les marqueurs ne sont transparents QUE pendant les fondus */
+  const globeVisible = state.globeOpacity > 0.02;
+  const globeFullyOpaque = state.globeOpacity > 0.98;
+
+  if (globeVisible) {
+    /* Terre : opaque dès qu'on atteint 0.98 */
+    const earthTransparent = !globeFullyOpaque;
+    if (earthMat.transparent !== earthTransparent) {
+      earthMat.transparent = earthTransparent;
+      earthMat.needsUpdate = true;
+    }
+    earthMat.opacity = state.globeOpacity;
+
+    /* Marqueurs : opaques dès qu'on atteint 0.98 */
+    markers.forEach(m => {
+      if (m.dot.material.transparent !== !globeFullyOpaque) {
+        m.dot.material.transparent = !globeFullyOpaque;
+        m.dot.material.needsUpdate = true;
+      }
+      if (m.halo.material.transparent !== !globeFullyOpaque) {
+        m.halo.material.transparent = !globeFullyOpaque;
+        m.halo.material.needsUpdate = true;
+      }
+      m.dot.material.opacity = state.globeOpacity;
+      m.halo.material.opacity = state.globeOpacity * 0.5;
+    });
+
+    /* Atmosphère : toujours transparente (additive blending) */
+    atmMat.opacity = state.globeOpacity * atmosphere.userData.baseOpacity;
+  } else {
+    /* Globe caché : on met tout à 0 */
+    earthMat.opacity = 0;
+    atmMat.opacity = 0;
+    markers.forEach(m => {
+      m.dot.material.opacity = 0;
+      m.halo.material.opacity = 0;
+    });
+  }
+
+  /* ===== Rotation globe auto ===== */
   if (state.globeOpacity > 0.01 && !isDragging) {
     globeInner.rotation.y += 0.0015;
   }
@@ -617,13 +633,6 @@ function tick(){
     m.dot.scale.setScalar(pulse);
     const hpulse = 1 + Math.sin(t * 2.2 + i * 0.8) * 0.55;
     m.halo.scale.setScalar(hpulse);
-  });
-
-  globeInner.traverse(child => {
-    if (child.material && child.userData.baseOpacity !== undefined){
-      child.material.opacity = state.globeOpacity * child.userData.baseOpacity;
-      child.material.transparent = true;
-    }
   });
 
   /* ===== Particules ===== */
