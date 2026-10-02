@@ -15,7 +15,6 @@
 </head>
 <body>
 
-  <!-- Loader -->
   <div class="loader">
     <div class="loader__cup">
       <div class="loader__fill"></div>
@@ -23,7 +22,6 @@
     <p class="loader__text">Méridien</p>
   </div>
 
-  <!-- Header -->
   <header class="header">
     <a href="#" class="header__logo">Méridien</a>
     <nav class="header__nav">
@@ -33,13 +31,8 @@
     </nav>
   </header>
 
-  <!-- Canvas 3D FIXE -->
   <canvas id="webgl"></canvas>
 
-  <!-- Vignette très subtile (coins uniquement) -->
-  <div class="veil" aria-hidden="true"></div>
-
-  <!-- Hero -->
   <section class="hero" id="hero">
     <div class="hero__content">
       <p class="hero__eyebrow">Torréfacteur nomade — depuis 2024</p>
@@ -55,7 +48,6 @@
     </div>
   </section>
 
-  <!-- Section Origine -->
   <section class="origine" id="origine">
     <p class="section__eyebrow">01 — Origine</p>
     <h2 class="section__title">Là où tout commence.</h2>
@@ -65,33 +57,32 @@
     </p>
   </section>
 
-  <!-- Section Voyage (globe 3D) -->
   <section class="voyage" id="voyage">
     <p class="section__eyebrow">02 — Voyage</p>
     <h2 class="section__title">D'un méridien<br />à l'autre.</h2>
     <p class="section__text">
       Éthiopie. Colombie. Brésil. Chaque origine a sa latitude, son altitude, son histoire.
+      <em>Fais tourner le globe. Clique sur un point.</em>
     </p>
   </section>
 
-  <!-- Section Produits -->
   <section class="produits" id="produits">
     <p class="section__eyebrow">03 — Les cafés</p>
     <h2 class="section__title">Trois voyages,<br />trois cafés.</h2>
     <div class="produits__grid">
-      <article class="produit">
+      <article class="produit" data-origin="yirgacheffe">
         <div class="produit__num">01</div>
         <h3>Yirgacheffe</h3>
         <p class="produit__origine">Éthiopie · 1 900 m</p>
         <p class="produit__notes">Floral, bergamote, jasmin</p>
       </article>
-      <article class="produit">
+      <article class="produit" data-origin="huila">
         <div class="produit__num">02</div>
         <h3>Huila</h3>
         <p class="produit__origine">Colombie · 1 750 m</p>
         <p class="produit__notes">Caramel, noisette, cacao</p>
       </article>
-      <article class="produit">
+      <article class="produit" data-origin="cerrado">
         <div class="produit__num">03</div>
         <h3>Cerrado</h3>
         <p class="produit__origine">Brésil · 1 100 m</p>
@@ -100,18 +91,15 @@
     </div>
   </section>
 
-  <!-- Footer -->
   <footer class="footer">
     <p class="footer__quote">« Le café est un prétexte. Le voyage est la raison. »</p>
     <p class="footer__copy">© 2025 Méridien — Torréfacteur nomade</p>
   </footer>
 
-  <!-- Lenis + GSAP -->
   <script src="https://cdn.jsdelivr.net/npm/lenis@1.1.14/dist/lenis.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
 
-  <!-- Three.js importmap -->
   <script type="importmap">
   {
     "imports": {
