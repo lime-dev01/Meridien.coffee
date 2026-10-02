@@ -1,6 +1,5 @@
 // ============================================
 // MÉRIDIEN — Three.js + GSAP
-// Morphing grain → globe + interactions
 // ============================================
 
 import * as THREE from 'three';
@@ -20,11 +19,9 @@ const START = isMobile
   ? { beanX: 0.9, beanY: 0.8, beanZ: 0, fov: 52, camZ: 5.5 }
   : { beanX: 1.6, beanY: 0.2, beanZ: 0, fov: 45, camZ: 5   };
 
-/* ---------- Loader ---------- */
 const loaderEl = document.querySelector('.loader');
 setTimeout(() => loaderEl.classList.add('hidden'), 1500);
 
-/* ---------- Lenis ---------- */
 const lenis = new Lenis({ duration: 1.2, smoothWheel: true });
 function raf(t){ lenis.raf(t); requestAnimationFrame(raf); }
 requestAnimationFrame(raf);
@@ -33,7 +30,6 @@ gsap.ticker.add(t => lenis.raf(t * 1000));
 gsap.ticker.lagSmoothing(0);
 gsap.registerPlugin(ScrollTrigger);
 
-/* ---------- Reveal ---------- */
 document.querySelectorAll('.section__eyebrow, .section__title, .section__text, .produit, .footer__quote').forEach(el => {
   gsap.from(el, { opacity: 0, y: 40, duration: 1.1, ease: 'power3.out',
     scrollTrigger: { trigger: el, start: 'top 85%' } });
@@ -41,7 +37,6 @@ document.querySelectorAll('.section__eyebrow, .section__title, .section__text, .
 gsap.to('.hero__content', { opacity: 0, y: -80, ease: 'none',
   scrollTrigger: { trigger: '.hero', start: 'top top', end: 'bottom top', scrub: 1 } });
 
-/* ---------- Scene ---------- */
 const canvas = document.querySelector('#webgl');
 const scene = new THREE.Scene();
 const sizes = { w: innerWidth, h: innerHeight };
@@ -60,7 +55,6 @@ renderer.setPixelRatio(PERF.pixelRatio);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
 
-/* ---------- Lights ---------- */
 scene.add(new THREE.AmbientLight(0xffffff, 0.8));
 scene.add(new THREE.HemisphereLight(0xFFF2D6, 0x3a2416, 0.7));
 const key = new THREE.DirectionalLight(0xfff2d6, 1.2);
@@ -72,7 +66,6 @@ gold.position.set(-2, 1, 3); scene.add(gold);
 const rim = new THREE.PointLight(0xFFE5B0, 2, 12);
 rim.position.set(3, 2, -2); scene.add(rim);
 
-/* ---------- State ---------- */
 const state = {
   beanOpacity: 1,
   globeVisible: false,
@@ -80,9 +73,6 @@ const state = {
   flash: 0,
 };
 
-/* ============================================
-   TEXTURES
-   ============================================ */
 function fbmTexture(size = PERF.fbmSize){
   const c = document.createElement('canvas');
   c.width = c.height = size;
@@ -191,9 +181,6 @@ function dotTex(){
   return new THREE.CanvasTexture(c);
 }
 
-/* ============================================
-   GRAIN
-   ============================================ */
 const SPHERE_TARGET_RADIUS = 1.15;
 
 function buildBeanGeometry(){
@@ -254,9 +241,6 @@ beanGroup.add(bean);
 beanGroup.position.set(START.beanX, START.beanY, START.beanZ);
 scene.add(beanGroup);
 
-/* ============================================
-   GLOBE 3D
-   ============================================ */
 const globeGroup = new THREE.Group();
 globeGroup.position.set(0.3, 0, 0);
 globeGroup.visible = false;
@@ -310,7 +294,6 @@ const markers = [];
 origins.forEach((o, i) => {
   const pos = latLonToVec3(o.lat, o.lon, SPHERE_TARGET_RADIUS * 1.02);
 
-  /* Point doré opaque */
   const mGeo = new THREE.SphereGeometry(0.055, 20, 20);
   const mMat = new THREE.MeshStandardMaterial({
     color: 0xC9A227,
@@ -328,7 +311,6 @@ origins.forEach((o, i) => {
   m.userData.index = i;
   globeInner.add(m);
 
-  /* Anneau plat doré */
   const rGeo = new THREE.RingGeometry(0.075, 0.095, 32);
   const rMat = new THREE.MeshBasicMaterial({
     color: 0xFFE5B0,
@@ -346,9 +328,6 @@ origins.forEach((o, i) => {
   markers.push({ dot: m, ring });
 });
 
-/* ============================================
-   FLASH + RING (transition)
-   ============================================ */
 const flashMat = new THREE.SpriteMaterial({
   map: radialTex(),
   color: 0xffffff,
@@ -373,9 +352,6 @@ const shockRing = new THREE.Mesh(ringGeo, ringMat);
 shockRing.position.set(0.3, 0, 0);
 scene.add(shockRing);
 
-/* ============================================
-   PARTICULES
-   ============================================ */
 const pCount = PERF.particleCount;
 const pPos = new Float32Array(pCount * 3);
 for (let i = 0; i < pCount * 3; i += 3){
@@ -392,9 +368,6 @@ const particles = new THREE.Points(pGeo, new THREE.PointsMaterial({
 }));
 scene.add(particles);
 
-/* ============================================
-   TIMELINE
-   ============================================ */
 const tl = gsap.timeline({
   scrollTrigger: {
     trigger: document.body,
@@ -405,7 +378,6 @@ const tl = gsap.timeline({
 });
 
 tl
-  /* PHASE 1 */
   .to(beanGroup.rotation, { y: Math.PI * 2, x: 0.4, ease: 'none', duration: 1 }, 0)
   .to(beanGroup.position, { x: START.beanX + 0.6, y: -1.3, z: 0.5, ease: 'none', duration: 1 }, 0)
   .to(beanGroup.scale, { x: 0.85, y: 0.85, z: 0.85, ease: 'none', duration: 1 }, 0)
@@ -413,7 +385,6 @@ tl
   .to(camera, { fov: START.fov - 3, ease: 'power2.inOut', duration: 1, onUpdate: () => camera.updateProjectionMatrix() }, 0)
   .to(lookAtTarget, { x: 0.4, y: -0.3, ease: 'power2.inOut', duration: 1 }, 0)
 
-  /* PHASE 2 — MÉTAMORPHOSE */
   .to(beanGroup.rotation, { y: Math.PI * 5, x: 0.6, ease: 'power2.in', duration: 0.5 }, 1.2)
   .to(beanGroup.position, { x: 0.3, y: 0, z: 0, ease: 'power2.inOut', duration: 0.5 }, 1.2)
   .to(beanGroup.scale, { x: 1, y: 1, z: 1, ease: 'power2.inOut', duration: 0.5 }, 1.2)
@@ -436,13 +407,11 @@ tl
     { opacity: 0.6, ease: 'power2.out', duration: 0.08 }, 2.1)
   .to(ringMat, { opacity: 0, ease: 'power2.in', duration: 0.4 }, 2.18)
 
-  /* PHASE 3 */
   .to(globeGroup.rotation, { y: Math.PI * 0.9, ease: 'none', duration: 1 }, 2.5)
   .to(cameraBase, { z: 4.4, x: 0.5, y: -0.1, ease: 'power1.inOut', duration: 1 }, 2.5)
   .to(camera, { fov: 40, ease: 'power1.inOut', duration: 1, onUpdate: () => camera.updateProjectionMatrix() }, 2.5)
   .to(lookAtTarget, { x: 0.3, y: 0, ease: 'power1.inOut', duration: 1 }, 2.5)
 
-  /* PHASE 4 */
   .to(state, { flash: 0.6, ease: 'power2.out', duration: 0.1 }, 3.65)
   .to(state, { flash: 0, ease: 'power2.in', duration: 0.3 }, 3.75)
 
@@ -460,7 +429,6 @@ tl
   .to(camera, { fov: 50, ease: 'power2.inOut', duration: 0.6, onUpdate: () => camera.updateProjectionMatrix() }, 4.1)
   .to(lookAtTarget, { x: 0.5, y: -0.4, ease: 'power2.inOut', duration: 0.6 }, 4.1)
 
-  /* PHASE 5 */
   .to(beanGroup.rotation, { y: Math.PI * 9, ease: 'none', duration: 1 }, 4.7)
   .to(beanGroup.position, { x: 1.6, y: -1.2, z: -0.3, ease: 'power1.inOut', duration: 1 }, 4.7)
   .to(state, { beanOpacity: 0.35, ease: 'power2.out', duration: 1 }, 4.7)
@@ -469,9 +437,6 @@ tl
   .to(camera, { fov: 52, ease: 'power2.inOut', duration: 1, onUpdate: () => camera.updateProjectionMatrix() }, 4.7)
   .to(lookAtTarget, { x: 0.2, y: -0.3, ease: 'power2.inOut', duration: 1 }, 4.7);
 
-/* ============================================
-   INTERACTIONS
-   ============================================ */
 const raycaster = new THREE.Raycaster();
 const pointerNDC = new THREE.Vector2();
 
@@ -497,15 +462,12 @@ document.addEventListener('pointermove', (e) => {
     const dx = e.clientX - prevPointer.x;
     const dy = e.clientY - prevPointer.y;
     if (Math.abs(dx) + Math.abs(dy) > 2) hasMoved = true;
-
     globeInner.rotation.y += dx * 0.006;
     globeInner.rotation.x += dy * 0.006;
     globeInner.rotation.x = Math.max(-0.9, Math.min(0.9, globeInner.rotation.x));
-
     prevPointer.x = e.clientX;
     prevPointer.y = e.clientY;
   }
-
   if (state.globeVisible && !isDragging) {
     updatePointerNDC(e);
     const idx = hitMarker();
@@ -518,12 +480,10 @@ document.addEventListener('pointermove', (e) => {
 document.addEventListener('pointerdown', (e) => {
   if (!state.globeVisible) return;
   if (e.target.closest('a, button')) return;
-
   isDragging = true;
   hasMoved = false;
   prevPointer.x = e.clientX;
   prevPointer.y = e.clientY;
-
   if (!isMobile) {
     document.body.style.cursor = 'grabbing';
     lenis.stop();
@@ -537,7 +497,6 @@ document.addEventListener('pointerup', (e) => {
   document.body.style.cursor = '';
   if (!isMobile) lenis.start();
   if (wasDrag) return;
-
   if (state.globeVisible) {
     updatePointerNDC(e);
     const idx = hitMarker();
@@ -555,7 +514,6 @@ document.addEventListener('pointerup', (e) => {
   }
 });
 
-/* ---------- Mouse parallax ---------- */
 const mouse = { x: 0, y: 0 };
 if (!isMobile) {
   addEventListener('mousemove', e => {
@@ -564,7 +522,6 @@ if (!isMobile) {
   });
 }
 
-/* ---------- Resize ---------- */
 addEventListener('resize', () => {
   sizes.w = innerWidth; sizes.h = innerHeight;
   camera.aspect = sizes.w / sizes.h;
@@ -572,17 +529,12 @@ addEventListener('resize', () => {
   renderer.setSize(sizes.w, sizes.h);
 });
 
-/* ============================================
-   LOOP
-   ============================================ */
 const clock = new THREE.Clock();
 
 function tick(){
   const t = clock.getElapsedTime();
 
-  /* ===== MORPHING ===== */
   const isMorphing = state.morph > 0.002 && state.morph < 0.998;
-
   if (isMorphing) {
     const arr = beanGeo.attributes.position.array;
     for (let i = 0; i < arr.length; i++){
@@ -602,7 +554,6 @@ function tick(){
 
   flashMat.opacity = state.flash;
 
-  /* ===== Grain ===== */
   if (!isDragging || !state.globeVisible) {
     beanGroup.rotation.y += 0.0025;
   }
@@ -612,7 +563,6 @@ function tick(){
     beanMat.needsUpdate = true;
   }
 
-  /* ===== Globe : toggle visible ===== */
   if (globeGroup.visible !== state.globeVisible) {
     globeGroup.visible = state.globeVisible;
   }
@@ -621,7 +571,6 @@ function tick(){
     globeInner.rotation.y += 0.0015;
   }
 
-  /* ===== Pulsation des marqueurs ===== */
   markers.forEach((m, i) => {
     const pulse = 1 + Math.sin(t * 2.2 + i * 0.8) * 0.3;
     m.dot.scale.setScalar(pulse);
@@ -629,15 +578,12 @@ function tick(){
     m.ring.scale.setScalar(rpulse);
   });
 
-  /* ===== Particules ===== */
   particles.rotation.y = t * 0.05;
   particles.rotation.x = Math.sin(t * 0.3) * 0.05;
 
-  /* ===== Lumière dorée ===== */
   gold.position.x = Math.cos(t * 0.6) * 3 + beanGroup.position.x;
   gold.position.z = Math.sin(t * 0.6) * 3;
 
-  /* ===== Caméra ===== */
   cameraParallax.x += (mouse.x * 0.35 - cameraParallax.x) * 0.05;
   cameraParallax.y += (mouse.y * 0.25 - cameraParallax.y) * 0.05;
 
@@ -653,4 +599,4 @@ function tick(){
 }
 tick();
 
-console.log('%cMéridien ☕
+console.log('%cMéridien', 'font-family: serif; font-size: 20px; color: #C9A227;');
