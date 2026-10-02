@@ -1,9 +1,21 @@
 // ============================================
 // MÉRIDIEN — Three.js + GSAP
-// Bean + Globe 3D interactif
+// Bean + Globe 3D + Cinematic camera (Phase 3)
 // ============================================
 
 import * as THREE from 'three';
+
+/* ---------- Détection mobile (perfs) ---------- */
+const isMobile = window.matchMedia('(max-width: 768px)').matches
+              || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+const PERF = {
+  beanSegments:   isMobile ? 96  : 200,
+  earthSegments:  isMobile ? 48  : 64,
+  fbmSize:        isMobile ? 256 : 512,
+  particleCount:  isMobile ? 180 : 500,
+  pixelRatio:     isMobile ? 1.5 : Math.min(devicePixelRatio, 2),
+};
 
 /* ---------- Loader ---------- */
 const loaderEl = document.querySelector('.loader');
@@ -30,26 +42,33 @@ gsap.to('.hero__content', { opacity: 0, y: -80, ease: 'none',
 const canvas = document.querySelector('#webgl');
 const scene = new THREE.Scene();
 const sizes = { w: innerWidth, h: innerHeight };
-const camera = new THREE.PerspectiveCamera(45, sizes.w / sizes.h, 0.1, 100);
-camera.position.set(0, 0, 5);
 
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+const camera = new THREE.PerspectiveCamera(45, sizes.w / sizes.h, 0.1, 100);
+
+/* Caméra pilotée par GSAP : base + parallaxe + lookAt target */
+const cameraBase = { x: 0, y: 0, z: 5 };
+const cameraParallax = { x: 0, y: 0 };
+const lookAtTarget = new THREE.Vector3(0, 0, 0);
+
+camera.position.set(cameraBase.x, cameraBase.y, cameraBase.z);
+camera.lookAt(lookAtTarget);
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: !isMobile, alpha: true });
 renderer.setSize(sizes.w, sizes.h);
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setPixelRatio(PERF.pixelRatio);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.2;
+renderer.toneMappingExposure = 1.35;
 
 /* ---------- Lights ---------- */
-scene.add(new THREE.AmbientLight(0xffffff, 0.45));
-const key = new THREE.DirectionalLight(0xfff2d6, 1.9);
+scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+const key = new THREE.DirectionalLight(0xfff2d6, 2.0);
 key.position.set(3, 4, 3); scene.add(key);
-const gold = new THREE.PointLight(0xC9A227, 8, 14);
+const gold = new THREE.PointLight(0xC9A227, 9, 14);
 gold.position.set(-2, 1, 3); scene.add(gold);
 const rim = new THREE.PointLight(0x8B5E3C, 5, 14);
 rim.position.set(2, -1, -3); scene.add(rim);
 
-// lumière dédiée au globe (chaleur dorée)
-const globeLight = new THREE.PointLight(0xC9A227, 6, 12);
+const globeLight = new THREE.PointLight(0xC9A227, 7, 12);
 globeLight.position.set(2, 2, 3);
 scene.add(globeLight);
 
@@ -64,7 +83,7 @@ const state = {
 /* ============================================
    TEXTURE DE BRUIT RÉALISTE
    ============================================ */
-function fbmTexture(size = 512){
+function fbmTexture(size = PERF.fbmSize){
   const c = document.createElement('canvas');
   c.width = c.height = size;
   const ctx = c.getContext('2d');
@@ -110,7 +129,7 @@ function fbmTexture(size = 512){
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(2, 3);
-  tex.anisotropy = 8;
+  tex.anisotropy = 4;
   return tex;
 }
 
@@ -118,7 +137,7 @@ function fbmTexture(size = 512){
    GRAIN DE CAFÉ
    ============================================ */
 function createBean(){
-  const geo = new THREE.SphereGeometry(1, 200, 200);
+  const geo = new THREE.SphereGeometry(1, PERF.beanSegments, PERF.beanSegments);
   const pos = geo.attributes.position;
   const v = new THREE.Vector3();
 
@@ -145,7 +164,7 @@ function createBean(){
   }
   geo.computeVertexNormals();
 
-  const bump = fbmTexture(512);
+  const bump = fbmTexture(PERF.fbmSize);
 
   const mat = new THREE.MeshPhysicalMaterial({
     color: 0x7a4a24,
@@ -172,14 +191,14 @@ beanGroup.position.set(1.4, 0, 0);
 scene.add(beanGroup);
 
 /* ============================================
-   GLOBE 3D (Terre + marqueurs)
+   GLOBE 3D
    ============================================ */
 const globeGroup = new THREE.Group();
 globeGroup.position.set(0.3, 0, 0);
 scene.add(globeGroup);
 
-/* --- Terre --- */
-const earthGeo = new THREE.SphereGeometry(1.15, 64, 64);
+/* Terre */
+const earthGeo = new THREE.SphereGeometry(1.15, PERF.earthSegments, PERF.earthSegments);
 const earthMat = new THREE.MeshStandardMaterial({
   color: 0xffffff,
   roughness: 0.9,
@@ -191,23 +210,17 @@ const earth = new THREE.Mesh(earthGeo, earthMat);
 earth.userData.baseOpacity = 1;
 globeGroup.add(earth);
 
-// Chargement de la texture Terre
+/* Texture Terre */
 const textureLoader = new THREE.TextureLoader();
 textureLoader.load(
   'https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg',
-  (tex) => {
-    earthMat.map = tex;
-    earthMat.needsUpdate = true;
-  },
+  (tex) => { earthMat.map = tex; earthMat.needsUpdate = true; },
   undefined,
-  (err) => {
-    console.warn('Texture Terre indisponible, fallback couleur', err);
-    earthMat.color = new THREE.Color(0x2a3a4a);
-  }
+  () => { earthMat.color = new THREE.Color(0x2a3a4a); }
 );
 
-/* --- Atmosphère (halo doré) --- */
-const atmGeo = new THREE.SphereGeometry(1.32, 48, 48);
+/* Atmosphère dorée */
+const atmGeo = new THREE.SphereGeometry(1.32, 32, 32);
 const atmMat = new THREE.MeshBasicMaterial({
   color: 0xC9A227,
   transparent: true,
@@ -219,7 +232,7 @@ const atmosphere = new THREE.Mesh(atmGeo, atmMat);
 atmosphere.userData.baseOpacity = 0.18;
 globeGroup.add(atmosphere);
 
-/* --- Marqueurs d'origine --- */
+/* Marqueurs */
 function latLonToVec3(lat, lon, r){
   const phi = (90 - lat) * Math.PI / 180;
   const theta = (lon + 180) * Math.PI / 180;
@@ -240,25 +253,16 @@ const markers = [];
 origins.forEach((o, i) => {
   const pos = latLonToVec3(o.lat, o.lon, 1.18);
 
-  // point doré
-  const mGeo = new THREE.SphereGeometry(0.028, 16, 16);
-  const mMat = new THREE.MeshBasicMaterial({
-    color: 0xC9A227,
-    transparent: true,
-    opacity: 0,
-  });
+  const mGeo = new THREE.SphereGeometry(0.028, 12, 12);
+  const mMat = new THREE.MeshBasicMaterial({ color: 0xC9A227, transparent: true, opacity: 0 });
   const m = new THREE.Mesh(mGeo, mMat);
   m.position.copy(pos);
   m.userData.baseOpacity = 1;
   globeGroup.add(m);
 
-  // halo pulsant
-  const hGeo = new THREE.SphereGeometry(0.075, 16, 16);
+  const hGeo = new THREE.SphereGeometry(0.075, 12, 12);
   const hMat = new THREE.MeshBasicMaterial({
-    color: 0xC9A227,
-    transparent: true,
-    opacity: 0,
-    blending: THREE.AdditiveBlending,
+    color: 0xC9A227, transparent: true, opacity: 0, blending: THREE.AdditiveBlending,
   });
   const halo = new THREE.Mesh(hGeo, hMat);
   halo.position.copy(pos);
@@ -271,7 +275,7 @@ origins.forEach((o, i) => {
 /* ============================================
    PARTICULES DORÉES
    ============================================ */
-const pCount = 500;
+const pCount = PERF.particleCount;
 const pPos = new Float32Array(pCount * 3);
 for (let i = 0; i < pCount * 3; i += 3){
   pPos[i]   = (Math.random() - 0.5) * 16;
@@ -298,7 +302,7 @@ const particles = new THREE.Points(pGeo, new THREE.PointsMaterial({
 scene.add(particles);
 
 /* ============================================
-   TIMELINE SCROLL
+   TIMELINE SCROLL — Narratif + Caméra cinématique
    ============================================ */
 const tl = gsap.timeline({
   scrollTrigger: {
@@ -310,25 +314,54 @@ const tl = gsap.timeline({
 });
 
 tl
-  /* --- 0 → 1 : Hero → Origine (grain descend à droite) --- */
+  /* ============================================
+     PHASE 1 — Hero → Origine
+     Grain descend à droite + caméra avance légèrement
+     ============================================ */
   .to(beanGroup.rotation, { y: Math.PI * 2, x: 0.4, ease: 'none', duration: 1 }, 0)
   .to(beanGroup.position, { x: 2.2, y: -1.2, z: 0.5, ease: 'none', duration: 1 }, 0)
   .to(beanGroup.scale, { x: 0.85, y: 0.85, z: 0.85, ease: 'none', duration: 1 }, 0)
 
-  /* --- 1 → 2 : Origine → Voyage (grain remonte à gauche + torréfaction, puis s'efface) --- */
+  /* CAMERA : petit dolly avant + léger décalage droite */
+  .to(cameraBase, { z: 4.2, x: 0.3, y: -0.15, ease: 'power2.inOut', duration: 1 }, 0)
+  .to(camera, { fov: 42, ease: 'power2.inOut', duration: 1, onUpdate: () => camera.updateProjectionMatrix() }, 0)
+  .to(lookAtTarget, { x: 0.4, y: -0.3, ease: 'power2.inOut', duration: 1 }, 0)
+
+  /* ============================================
+     PHASE 2 — Origine → Voyage
+     Grain torréfié remonte à gauche, globe apparaît
+     Caméra recule et se recentre sur le globe
+     ============================================ */
   .to(beanGroup.rotation, { y: Math.PI * 4, x: -0.5, ease: 'none', duration: 1 }, 1)
   .to(beanGroup.position, { x: -2.3, y: 1.4, z: 0.2, ease: 'none', duration: 1 }, 1)
   .to(bean.material.color, { r: 0.45, g: 0.25, b: 0.12, ease: 'none', duration: 1 }, 1)
   .to(bean.material, { roughness: 0.48, ease: 'none', duration: 1 }, 1)
   .to(beanGroup.scale, { x: 1.0, y: 1.0, z: 1.0, ease: 'none', duration: 1 }, 1)
-  // Fondu croisé grain → globe (au milieu de la transition)
+
+  /* Fondu croisé grain → globe */
   .to(state, { beanOpacity: 0, ease: 'power2.in', duration: 0.6 }, 1.4)
   .to(state, { globeOpacity: 1, ease: 'power2.out', duration: 0.6 }, 1.4)
 
-  /* --- 2 → 3 : Voyage (le globe tourne) --- */
+  /* CAMERA : recule, pivote vers la gauche (là où le globe apparaît) */
+  .to(cameraBase, { z: 5.2, x: -0.5, y: 0.35, ease: 'power2.inOut', duration: 1 }, 1)
+  .to(camera, { fov: 48, ease: 'power2.inOut', duration: 1, onUpdate: () => camera.updateProjectionMatrix() }, 1)
+  .to(lookAtTarget, { x: -0.3, y: 0.15, ease: 'power2.inOut', duration: 1 }, 1)
+
+  /* ============================================
+     PHASE 3 — Voyage (focus globe)
+     Globe tourne, la caméra orbite autour
+     ============================================ */
   .to(globeGroup.rotation, { y: Math.PI * 1.5, ease: 'none', duration: 1 }, 2)
 
-  /* --- 3 → 4 : Voyage → Produits (globe s'efface, grain revient brun foncé) --- */
+  /* CAMERA : orbite autour du globe (mouvement cinématique) */
+  .to(cameraBase, { z: 4.6, x: 0.9, y: -0.2, ease: 'power1.inOut', duration: 1 }, 2)
+  .to(camera, { fov: 40, ease: 'power1.inOut', duration: 1, onUpdate: () => camera.updateProjectionMatrix() }, 2)
+  .to(lookAtTarget, { x: 0.35, y: 0, ease: 'power1.inOut', duration: 1 }, 2)
+
+  /* ============================================
+     PHASE 4 — Voyage → Produits
+     Globe s'efface, grain revient, caméra repart
+     ============================================ */
   .to(state, { globeOpacity: 0, ease: 'power2.in', duration: 0.6 }, 3)
   .to(state, { beanOpacity: 1, ease: 'power2.out', duration: 0.6 }, 3)
   .to(beanGroup.rotation, { y: Math.PI * 6, x: 0.2, ease: 'none', duration: 1 }, 3)
@@ -336,20 +369,35 @@ tl
   .to(bean.material.color, { r: 0.28, g: 0.15, b: 0.08, ease: 'none', duration: 1 }, 3)
   .to(beanGroup.scale, { x: 0.6, y: 0.6, z: 0.6, ease: 'none', duration: 1 }, 3)
 
-  /* --- 4 → 5 : Produits → Footer (disparition en poussière) --- */
+  /* CAMERA : recule à fond, décentrée à droite */
+  .to(cameraBase, { z: 6.5, x: 0.5, y: -0.4, ease: 'power2.inOut', duration: 1 }, 3)
+  .to(camera, { fov: 50, ease: 'power2.inOut', duration: 1, onUpdate: () => camera.updateProjectionMatrix() }, 3)
+  .to(lookAtTarget, { x: 0.6, y: -0.5, ease: 'power2.inOut', duration: 1 }, 3)
+
+  /* ============================================
+     PHASE 5 — Produits → Footer
+     Grain disparaît en poussière, caméra se retire dans l'espace
+     ============================================ */
   .to(beanGroup.scale, { x: 0.001, y: 0.001, z: 0.001, ease: 'power2.in', duration: 1 }, 4)
   .to(beanGroup.rotation, { y: Math.PI * 10, ease: 'none', duration: 1 }, 4)
   .to(beanGroup.position, { y: -3, x: 0, ease: 'power1.in', duration: 1 }, 4)
-  .to(particles.material, { size: 0.02, opacity: 0.15, ease: 'none', duration: 1 }, 4);
+  .to(particles.material, { size: 0.02, opacity: 0.15, ease: 'none', duration: 1 }, 4)
+
+  /* CAMERA : dolly out final — effet "on s'éloigne dans l'espace" */
+  .to(cameraBase, { z: 9, x: 0, y: 0.5, ease: 'power2.inOut', duration: 1 }, 4)
+  .to(camera, { fov: 55, ease: 'power2.inOut', duration: 1, onUpdate: () => camera.updateProjectionMatrix() }, 4)
+  .to(lookAtTarget, { x: 0, y: 0, ease: 'power2.inOut', duration: 1 }, 4);
 
 /* ============================================
-   SOURIS (parallaxe)
+   SOURIS (parallaxe) — desktop uniquement
    ============================================ */
 const mouse = { x: 0, y: 0 };
-addEventListener('mousemove', e => {
-  mouse.x = (e.clientX / sizes.w) * 2 - 1;
-  mouse.y = -((e.clientY / sizes.h) * 2 - 1);
-});
+if (!isMobile) {
+  addEventListener('mousemove', e => {
+    mouse.x = (e.clientX / sizes.w) * 2 - 1;
+    mouse.y = -((e.clientY / sizes.h) * 2 - 1);
+  });
+}
 
 /* ============================================
    RESIZE
@@ -379,7 +427,7 @@ function tick(){
     globeGroup.rotation.y += 0.0018;
   }
 
-  // pulsation des marqueurs
+  // pulsation marqueurs
   markers.forEach((m, i) => {
     const pulse = 1 + Math.sin(t * 2.2 + i * 0.8) * 0.35;
     m.dot.scale.setScalar(pulse);
@@ -387,7 +435,6 @@ function tick(){
     m.halo.scale.setScalar(hpulse);
   });
 
-  // opacités du globe (Terre + atmosphère + marqueurs)
   globeGroup.traverse(child => {
     if (child.material && child.userData.baseOpacity !== undefined){
       child.material.opacity = state.globeOpacity * child.userData.baseOpacity;
@@ -399,14 +446,20 @@ function tick(){
   particles.rotation.y = t * 0.05;
   particles.rotation.x = Math.sin(t * 0.3) * 0.05;
 
-  /* --- Lumière dorée orbite autour du grain --- */
+  /* --- Lumière dorée orbite --- */
   gold.position.x = Math.cos(t * 0.6) * 3 + beanGroup.position.x;
   gold.position.z = Math.sin(t * 0.6) * 3;
 
-  /* --- Caméra parallaxe --- */
-  camera.position.x += (mouse.x * 0.35 - camera.position.x) * 0.05;
-  camera.position.y += (mouse.y * 0.25 - camera.position.y) * 0.05;
-  camera.lookAt(0, 0, 0);
+  /* --- Caméra : base (GSAP) + parallaxe (souris) --- */
+  cameraParallax.x += (mouse.x * 0.35 - cameraParallax.x) * 0.05;
+  cameraParallax.y += (mouse.y * 0.25 - cameraParallax.y) * 0.05;
+
+  camera.position.set(
+    cameraBase.x + cameraParallax.x,
+    cameraBase.y + cameraParallax.y,
+    cameraBase.z
+  );
+  camera.lookAt(lookAtTarget);
 
   renderer.render(scene, camera);
   requestAnimationFrame(tick);
