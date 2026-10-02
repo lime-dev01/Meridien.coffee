@@ -1,5 +1,5 @@
 /* ============================================
-   MÉRIDIEN — Feuille de style principale
+   MÉRIDIEN — Feuille de style
    ============================================ */
 
 :root {
@@ -106,18 +106,7 @@ a { color: inherit; text-decoration: none; }
 }
 .header__nav a:hover { opacity: 1; }
 
-/* --- Hero + Canvas 3D --- */
-.hero {
-  height: 100vh;
-  min-height: 600px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: 0 var(--gutter);
-  position: relative;
-  overflow: hidden;
-}
-
+/* --- Canvas 3D FIXE sur tout le viewport --- */
 #webgl {
   position: fixed;
   top: 0; left: 0;
@@ -127,19 +116,17 @@ a { color: inherit; text-decoration: none; }
   pointer-events: none;
 }
 
-.hero::before {
-  content: '';
-  position: absolute;
-  top: 50%; right: 15%;
-  transform: translateY(-50%);
-  width: 60vw;
-  height: 60vw;
-  max-width: 800px;
-  max-height: 800px;
-  background: radial-gradient(circle, rgba(201, 162, 39, 0.12), transparent 70%);
-  pointer-events: none;
-  filter: blur(40px);
-  z-index: 0;
+/* --- Hero --- */
+.hero {
+  height: 100vh;
+  min-height: 600px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 var(--gutter);
+  position: relative;
+  overflow: hidden;
+  z-index: 2;
 }
 
 .hero__content {
@@ -163,6 +150,7 @@ a { color: inherit; text-decoration: none; }
   font-size: clamp(2.5rem, 8vw, 7rem);
   line-height: 0.95;
   letter-spacing: -0.02em;
+  text-shadow: 0 2px 30px rgba(0, 0, 0, 0.8);
 }
 .hero__title em {
   font-style: italic;
@@ -174,7 +162,8 @@ a { color: inherit; text-decoration: none; }
   margin-top: 2rem;
   font-size: clamp(1rem, 1.4vw, 1.2rem);
   max-width: 40ch;
-  opacity: 0.75;
+  opacity: 0.85;
+  text-shadow: 0 2px 20px rgba(0, 0, 0, 0.9);
 }
 
 .hero__scroll {
@@ -187,7 +176,7 @@ a { color: inherit; text-decoration: none; }
   font-size: 0.75rem;
   letter-spacing: 0.3em;
   text-transform: uppercase;
-  opacity: 0.6;
+  opacity: 0.7;
   z-index: 2;
 }
 .hero__scroll-line {
@@ -210,12 +199,25 @@ a { color: inherit; text-decoration: none; }
   100% { transform: translateX(100%); }
 }
 
-/* --- Sections génériques --- 
-section {
+/* --- Sections : fond transparent + voile dégradé --- */
+section:not(.hero) {
   padding: var(--section-pad) var(--gutter);
   position: relative;
   z-index: 2;
-  background: rgba(14, 11, 8, 0.88);
+  background: transparent;
+}
+
+section:not(.hero)::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(
+    ellipse at 50% 50%,
+    rgba(14, 11, 8, 0.35) 0%,
+    rgba(14, 11, 8, 0.78) 75%
+  );
+  z-index: -1;
+  pointer-events: none;
 }
 
 .section__eyebrow {
@@ -233,11 +235,13 @@ section {
   letter-spacing: -0.02em;
   max-width: 20ch;
   margin-bottom: 2rem;
+  text-shadow: 0 2px 24px rgba(0, 0, 0, 0.8);
 }
 .section__text {
   max-width: 55ch;
   font-size: 1.1rem;
-  opacity: 0.8;
+  opacity: 0.9;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.8);
 }
 
 /* --- Produits --- */
@@ -252,6 +256,8 @@ section {
   border: 1px solid rgba(242, 233, 220, 0.15);
   border-radius: 4px;
   transition: border-color 0.4s, transform 0.4s;
+  background: rgba(14, 11, 8, 0.55);
+  backdrop-filter: blur(6px);
 }
 .produit:hover {
   border-color: var(--or);
@@ -272,7 +278,7 @@ section {
 }
 .produit__origine {
   font-size: 0.85rem;
-  opacity: 0.6;
+  opacity: 0.7;
   margin-bottom: 0.8rem;
   letter-spacing: 0.05em;
 }
@@ -290,7 +296,8 @@ section {
   text-align: center;
   position: relative;
   z-index: 2;
-  background: var(--noir-cafe);
+  background: rgba(14, 11, 8, 0.7);
+  backdrop-filter: blur(6px);
 }
 .footer__quote {
   font-family: var(--font-titre);
@@ -298,7 +305,7 @@ section {
   font-size: 1.3rem;
   max-width: 40ch;
   margin: 0 auto 2rem;
-  opacity: 0.85;
+  opacity: 0.9;
 }
 .footer__copy {
   font-size: 0.8rem;
@@ -310,13 +317,5 @@ section {
 /* --- Responsive --- */
 @media (max-width: 768px) {
   .header__nav { display: none; }
-  #webgl { opacity: 0.7; }
-}
-.hero {
-  background: transparent !important;
-}
-.hero__content,
-.section__title,
-.section__text {
-  text-shadow: 0 2px 24px rgba(14, 11, 8, 0.9);
+  #webgl { opacity: 0.85; }
 }
