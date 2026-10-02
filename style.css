@@ -102,10 +102,7 @@ a { color: inherit; text-decoration: none; }
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
-.header__nav a {
-  opacity: 0.7;
-  transition: opacity 0.3s;
-}
+.header__nav a { opacity: 0.7; transition: opacity 0.3s; }
 .header__nav a:hover { opacity: 1; }
 
 /* --- Canvas 3D --- */
@@ -119,17 +116,17 @@ a { color: inherit; text-decoration: none; }
   pointer-events: none;
 }
 
-/* --- Voile global unique (léger !) --- */
+/* --- Vignette TRÈS subtile (coins uniquement, ne touche pas le grain) --- */
 .veil {
   position: fixed;
   inset: 0;
   z-index: 2;
   pointer-events: none;
   background: radial-gradient(
-    ellipse at 50% 50%,
-    rgba(14, 11, 8, 0) 0%,
-    rgba(14, 11, 8, 0.15) 60%,
-    rgba(14, 11, 8, 0.35) 100%
+    ellipse 90% 90% at 50% 50%,
+    transparent 0%,
+    transparent 65%,
+    rgba(14, 11, 8, 0.15) 100%
   );
 }
 
@@ -334,7 +331,6 @@ section:not(.hero) {
   .header { padding: 1.25rem var(--gutter); }
 
   .hero { align-items: flex-start; }
-
   .hero__title { font-size: clamp(2.2rem, 11vw, 3.5rem); }
   .hero__subtitle { margin-top: 1.5rem; font-size: 0.95rem; }
   .hero__eyebrow { font-size: 0.7rem; letter-spacing: 0.25em; }
@@ -355,7 +351,7 @@ section:not(.hero) {
   .produits__grid { grid-template-columns: 1fr; }
 }
 
-/* --- Préférence réduite (accessibilité) --- */
+/* --- Accessibilité --- */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
