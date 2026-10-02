@@ -116,20 +116,6 @@ a { color: inherit; text-decoration: none; }
   pointer-events: none;
 }
 
-/* --- Vignette TRÈS subtile (coins uniquement, ne touche pas le grain) --- */
-.veil {
-  position: fixed;
-  inset: 0;
-  z-index: 2;
-  pointer-events: none;
-  background: radial-gradient(
-    ellipse 90% 90% at 50% 50%,
-    transparent 0%,
-    transparent 65%,
-    rgba(14, 11, 8, 0.15) 100%
-  );
-}
-
 /* --- Hero --- */
 .hero {
   height: 100vh;
@@ -220,7 +206,10 @@ section:not(.hero) {
   position: relative;
   z-index: 3;
   background: transparent;
+  pointer-events: none;
 }
+section:not(.hero) a,
+section:not(.hero) button { pointer-events: auto; }
 
 .section__eyebrow {
   font-size: 0.8rem;
@@ -245,6 +234,15 @@ section:not(.hero) {
   opacity: 0.95;
   text-shadow: 0 2px 18px rgba(0, 0, 0, 0.85);
 }
+.section__text em {
+  display: block;
+  margin-top: 1rem;
+  font-family: var(--font-titre);
+  font-style: italic;
+  color: var(--or);
+  font-size: 0.95rem;
+  letter-spacing: 0.05em;
+}
 
 /* --- Produits --- */
 .produits__grid {
@@ -257,14 +255,25 @@ section:not(.hero) {
   padding: 2rem;
   border: 1px solid rgba(242, 233, 220, 0.15);
   border-radius: 4px;
-  transition: border-color 0.4s, transform 0.4s;
+  transition: border-color 0.4s, transform 0.4s, box-shadow 0.4s;
   background: rgba(14, 11, 8, 0.35);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+  pointer-events: auto;
 }
 .produit:hover {
   border-color: var(--or);
   transform: translateY(-4px);
+}
+.produit.highlight {
+  border-color: var(--or);
+  box-shadow: 0 0 40px rgba(201, 162, 39, 0.4);
+  animation: pulseHighlight 1.6s ease-in-out;
+}
+@keyframes pulseHighlight {
+  0%   { box-shadow: 0 0 0 rgba(201, 162, 39, 0); }
+  30%  { box-shadow: 0 0 60px rgba(201, 162, 39, 0.7); }
+  100% { box-shadow: 0 0 40px rgba(201, 162, 39, 0.4); }
 }
 .produit h3 {
   font-family: var(--font-titre);
