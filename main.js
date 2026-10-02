@@ -17,7 +17,6 @@ const PERF = {
   pixelRatio:     isMobile ? 1.5 : Math.min(devicePixelRatio, 2),
 };
 
-/* Positions responsives */
 const START = isMobile
   ? { beanX: 0.9, beanY: 0.8, beanZ: 0, fov: 52, camZ: 5.5 }
   : { beanX: 1.6, beanY: 0.2, beanZ: 0, fov: 45, camZ: 5   };
@@ -60,38 +59,47 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: !isMobile, alpha: 
 renderer.setSize(sizes.w, sizes.h);
 renderer.setPixelRatio(PERF.pixelRatio);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.1;
+renderer.toneMappingExposure = 1.05;
 
-/* ---------- Lights ---------- */
-scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+/* ============================================
+   LIGHTS — éclairage plus uniforme (fix voile noir)
+   ============================================ */
+scene.add(new THREE.AmbientLight(0xffffff, 0.75));
 
-const key = new THREE.DirectionalLight(0xfff2d6, 1.6);
+/* Hemisphere = lumière douce venant du ciel + sol */
+const hemi = new THREE.HemisphereLight(0xFFF2D6, 0x3a2416, 0.6);
+scene.add(hemi);
+
+const key = new THREE.DirectionalLight(0xfff2d6, 1.3);
 key.position.set(3, 4, 3); scene.add(key);
 
-/* ✨ Fill light depuis la caméra (fix ombre noire sur le grain) */
-const fill = new THREE.DirectionalLight(0xF2E9DC, 0.9);
+/* Fill depuis la caméra */
+const fill = new THREE.DirectionalLight(0xF2E9DC, 0.85);
 fill.position.set(0, 1, 5); scene.add(fill);
 
-const gold = new THREE.PointLight(0xC9A227, 6, 14);
+/* Fill du dessus */
+const topFill = new THREE.DirectionalLight(0xF2E9DC, 0.5);
+topFill.position.set(0, 5, 1); scene.add(topFill);
+
+const gold = new THREE.PointLight(0xC9A227, 5, 14);
 gold.position.set(-2, 1, 3); scene.add(gold);
 
-/* Rim arrière (edge highlight) */
-const rim = new THREE.PointLight(0xFFE5B0, 3.5, 12);
+const rim = new THREE.PointLight(0xFFE5B0, 3, 12);
 rim.position.set(3, 2, -2); scene.add(rim);
 
-const globeLight = new THREE.PointLight(0xC9A227, 5, 12);
+const globeLight = new THREE.PointLight(0xC9A227, 4.5, 12);
 globeLight.position.set(2, 2, 3); scene.add(globeLight);
 
 /* ---------- State ---------- */
 const state = {
   beanOpacity: 1,
   globeOpacity: 0,
-  morph: 0,       // 0 = grain pur, 1 = sphere pure (pour le morphing)
-  flash: 0,       // intensité du flash pendant la transition
+  morph: 0,
+  flash: 0,
 };
 
 /* ============================================
-   TEXTURE DE BRUIT
+   TEXTURES
    ============================================ */
 function fbmTexture(size = PERF.fbmSize){
   const c = document.createElement('canvas');
@@ -138,8 +146,34 @@ function fbmTexture(size = PERF.fbmSize){
   return tex;
 }
 
+/* Texture radiale (fix carré blanc) */
+function radialTex(){
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  g.addColorStop(0,   'rgba(255,245,220,1)');
+  g.addColorStop(0.3, 'rgba(255,229,176,0.6)');
+  g.addColorStop(0.7, 'rgba(201,162,39,0.15)');
+  g.addColorStop(1,   'rgba(201,162,39,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 128, 128);
+  return new THREE.CanvasTexture(c);
+}
+
+function dotTex(){
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, 'rgba(255,240,200,1)');
+  g.addColorStop(0.5, 'rgba(201,162,39,0.6)');
+  g.addColorStop(1, 'rgba(201,162,39,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+}
+
 /* ============================================
-   GRAIN DE CAFÉ (avec morph target vers sphere)
+   GRAIN DE CAFÉ
    ============================================ */
 const SPHERE_TARGET_RADIUS = 1.15;
 
@@ -151,15 +185,21 @@ function buildBeanGeometry(){
   for (let i = 0; i < pos.count; i++){
     v.fromBufferAttribute(pos, i);
     v.x *= 0.75; v.y *= 0.85; v.z *= 1.32;
+
+    /* Rainure plus douce (fix voile noir) */
     if (v.x > 0){
-      const creaseY = Math.exp(-Math.pow(v.y / 0.16, 2));
+      const creaseY = Math.exp(-Math.pow(v.y / 0.22, 2));
       const creaseZ = Math.exp(-Math.pow(v.z / 1.0, 4));
-      v.x -= creaseY * creaseZ * 0.45;
+      v.x -= creaseY * creaseZ * 0.32;   // était 0.45
     }
-    v.x -= Math.exp(-Math.pow(v.x / 0.5, 2)) * 0.05 * Math.sign(v.x);
-    v.x += Math.sin(v.z * 8 + v.x * 3) * 0.02;
-    v.y += Math.cos(v.y * 7 + v.z * 2) * 0.018;
-    v.z += Math.sin(v.x * 12 + v.y * 5) * 0.012;
+
+    v.x -= Math.exp(-Math.pow(v.x / 0.5, 2)) * 0.04 * Math.sign(v.x);
+
+    /* Micro-reliefs atténués */
+    v.x += Math.sin(v.z * 8 + v.x * 3) * 0.012;
+    v.y += Math.cos(v.y * 7 + v.z * 2) * 0.011;
+    v.z += Math.sin(v.x * 12 + v.y * 5) * 0.008;
+
     pos.setXYZ(i, v.x, v.y, v.z);
   }
   geo.computeVertexNormals();
@@ -167,30 +207,27 @@ function buildBeanGeometry(){
 }
 
 function buildSphereTargetGeometry(){
-  /* Sphère parfaite, même topologie (pour morphing propre) */
-  const geo = new THREE.SphereGeometry(SPHERE_TARGET_RADIUS, PERF.beanSegments, PERF.beanSegments);
-  return geo;
+  return new THREE.SphereGeometry(SPHERE_TARGET_RADIUS, PERF.beanSegments, PERF.beanSegments);
 }
 
 const beanGeo = buildBeanGeometry();
 const sphereGeo = buildSphereTargetGeometry();
 
-/* Stocke les positions pour le morphing */
 const beanOrigPositions = new Float32Array(beanGeo.attributes.position.array);
 const sphereTargetPositions = new Float32Array(sphereGeo.attributes.position.array);
 
 const bump = fbmTexture(PERF.fbmSize);
 const beanMat = new THREE.MeshPhysicalMaterial({
   color: 0x6a3f1e,
-  roughness: 0.68,
-  metalness: 0.04,
-  clearcoat: 0.32,
+  roughness: 0.72,
+  metalness: 0.03,
+  clearcoat: 0.25,
   clearcoatRoughness: 0.7,
-  sheen: 0.25,
+  sheen: 0.2,
   sheenColor: new THREE.Color(0xC9A227),
-  sheenRoughness: 0.85,
-  bumpMap: bump, bumpScale: 0.22,
-  transparent: true, opacity: 1,
+  sheenRoughness: 0.9,
+  bumpMap: bump, bumpScale: 0.08,   // ⬅️ était 0.22
+  transparent: false, opacity: 1,
 });
 
 const bean = new THREE.Mesh(beanGeo, beanMat);
@@ -226,7 +263,6 @@ textureLoader.load(
   () => { earthMat.color = new THREE.Color(0x2a3a4a); }
 );
 
-/* Atmosphère */
 const atmGeo = new THREE.SphereGeometry(SPHERE_TARGET_RADIUS * 1.15, 32, 32);
 const atmMat = new THREE.MeshBasicMaterial({
   color: 0xC9A227, transparent: true, opacity: 0,
@@ -279,18 +315,23 @@ origins.forEach((o, i) => {
 });
 
 /* ============================================
-   FLASH DORÉ (pendant la transition)
+   FLASH (avec texture radiale — plus de carré blanc)
    ============================================ */
 const flashMat = new THREE.SpriteMaterial({
-  color: 0xFFE5B0, transparent: true, opacity: 0,
-  blending: THREE.AdditiveBlending, depthWrite: false,
+  map: radialTex(),
+  color: 0xffffff,
+  transparent: true,
+  opacity: 0,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  depthTest: false,
 });
 const flash = new THREE.Sprite(flashMat);
 flash.scale.set(6, 6, 1);
 flash.position.set(0.3, 0, 0);
 scene.add(flash);
 
-/* Anneau d'onde qui se propage lors de la transition */
+/* Anneau de choc */
 const ringGeo = new THREE.RingGeometry(0.5, 0.6, 64);
 const ringMat = new THREE.MeshBasicMaterial({
   color: 0xC9A227, transparent: true, opacity: 0,
@@ -313,16 +354,6 @@ for (let i = 0; i < pCount * 3; i += 3){
 const pGeo = new THREE.BufferGeometry();
 pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
 
-function dotTex(){
-  const c = document.createElement('canvas'); c.width = c.height = 64;
-  const ctx = c.getContext('2d');
-  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
-  g.addColorStop(0, 'rgba(255,240,200,1)');
-  g.addColorStop(0.5, 'rgba(201,162,39,0.6)');
-  g.addColorStop(1, 'rgba(201,162,39,0)');
-  ctx.fillStyle = g; ctx.fillRect(0, 0, 64, 64);
-  return new THREE.CanvasTexture(c);
-}
 const particles = new THREE.Points(pGeo, new THREE.PointsMaterial({
   size: 0.07, map: dotTex(), transparent: true, depthWrite: false,
   blending: THREE.AdditiveBlending, color: 0xC9A227,
@@ -330,7 +361,7 @@ const particles = new THREE.Points(pGeo, new THREE.PointsMaterial({
 scene.add(particles);
 
 /* ============================================
-   TIMELINE
+   TIMELINE — TRANSITIONS PROPRES
    ============================================ */
 const tl = gsap.timeline({
   scrollTrigger: {
@@ -343,7 +374,7 @@ const tl = gsap.timeline({
 
 tl
   /* ==========================================
-     PHASE 1 — Hero → Origine (grain descend)
+     PHASE 1 — Hero → Origine
      ========================================== */
   .to(beanGroup.rotation, { y: Math.PI * 2, x: 0.4, ease: 'none', duration: 1 }, 0)
   .to(beanGroup.position, { x: START.beanX + 0.6, y: -1.3, z: 0.5, ease: 'none', duration: 1 }, 0)
@@ -353,85 +384,82 @@ tl
   .to(lookAtTarget, { x: 0.4, y: -0.3, ease: 'power2.inOut', duration: 1 }, 0)
 
   /* ==========================================
-     PHASE 2 — Origine → Voyage : MÉTAMORPHOSE
-     Le grain devient le globe (morphing géométrique)
+     PHASE 2 — MÉTAMORPHOSE grain → globe
      ========================================== */
 
-  /* 2.1 — Le grain accélère sa rotation et file vers le centre */
+  /* 2.1 — Grain accélère, file au centre, reste 100% opaque */
   .to(beanGroup.rotation, { y: Math.PI * 5, x: 0.6, ease: 'power2.in', duration: 0.5 }, 1.2)
   .to(beanGroup.position, { x: 0.3, y: 0, z: 0, ease: 'power2.inOut', duration: 0.5 }, 1.2)
   .to(beanGroup.scale, { x: 1, y: 1, z: 1, ease: 'power2.inOut', duration: 0.5 }, 1.2)
-
-  /* 2.2 — Le grain se transforme (morphing géométrique 0 → 1) */
-  .to(state, { morph: 1, ease: 'power2.inOut', duration: 0.55 }, 1.6)
-
-  /* 2.3 — Flash doré au pic de la transformation + onde de choc */
-  .to(state, { flash: 1, ease: 'power2.out', duration: 0.2 }, 1.9)
-  .to(state, { flash: 0, ease: 'power2.in', duration: 0.3 }, 2.1)
-  .fromTo(shockRing.scale,
-    { x: 0.2, y: 0.2, z: 0.2 },
-    { x: 8, y: 8, z: 8, ease: 'power3.out', duration: 0.6 }, 1.9)
-  .fromTo(ringMat,
-    { opacity: 0 },
-    { opacity: 0.9, ease: 'power2.out', duration: 0.1 }, 1.9)
-  .to(ringMat, { opacity: 0, ease: 'power2.in', duration: 0.5 }, 2.0)
-
-  /* 2.4 — Fondu croisé grain → globe (pendant le morphing) */
-  .to(state, { beanOpacity: 0, ease: 'power2.in', duration: 0.3 }, 1.75)
-  .to(state, { globeOpacity: 1, ease: 'power2.out', duration: 0.4 }, 1.95)
-
-  /* 2.5 — Caméra suit la transformation */
   .to(cameraBase, { z: 5.2, x: 0.1, y: 0.1, ease: 'power2.inOut', duration: 0.6 }, 1.2)
   .to(camera, { fov: START.fov + 1, ease: 'power2.inOut', duration: 0.6, onUpdate: () => camera.updateProjectionMatrix() }, 1.2)
   .to(lookAtTarget, { x: 0.15, y: 0, ease: 'power2.inOut', duration: 0.6 }, 1.2)
 
+  /* 2.2 — Morphing géométrique rapide (grain → sphère), reste opaque */
+  .to(state, { morph: 1, ease: 'power3.inOut', duration: 0.35 }, 1.75)
+
+  /* 2.3 — SWAP INSTANTANÉ au moment exact où morph = 1 (invisible) */
+  .to(state, { beanOpacity: 0, ease: 'none', duration: 0.02 }, 2.1)
+  .to(state, { globeOpacity: 1, ease: 'none', duration: 0.02 }, 2.1)
+
+  /* 2.4 — Flash + onde de choc au moment du swap */
+  .to(state, { flash: 0.85, ease: 'power2.out', duration: 0.1 }, 2.05)
+  .to(state, { flash: 0, ease: 'power2.in', duration: 0.35 }, 2.15)
+  .fromTo(shockRing.scale,
+    { x: 0.5, y: 0.5, z: 0.5 },
+    { x: 7, y: 7, z: 7, ease: 'power3.out', duration: 0.5 }, 2.1)
+  .fromTo(ringMat,
+    { opacity: 0 },
+    { opacity: 0.7, ease: 'power2.out', duration: 0.08 }, 2.1)
+  .to(ringMat, { opacity: 0, ease: 'power2.in', duration: 0.4 }, 2.18)
+
   /* ==========================================
      PHASE 3 — Voyage (focus globe)
      ========================================== */
-  .to(globeGroup.rotation, { y: Math.PI * 0.9, ease: 'none', duration: 1 }, 2.6)
-  .to(cameraBase, { z: 4.4, x: 0.5, y: -0.1, ease: 'power1.inOut', duration: 1 }, 2.6)
-  .to(camera, { fov: 40, ease: 'power1.inOut', duration: 1, onUpdate: () => camera.updateProjectionMatrix() }, 2.6)
-  .to(lookAtTarget, { x: 0.3, y: 0, ease: 'power1.inOut', duration: 1 }, 2.6)
+  .to(globeGroup.rotation, { y: Math.PI * 0.9, ease: 'none', duration: 1 }, 2.5)
+  .to(cameraBase, { z: 4.4, x: 0.5, y: -0.1, ease: 'power1.inOut', duration: 1 }, 2.5)
+  .to(camera, { fov: 40, ease: 'power1.inOut', duration: 1, onUpdate: () => camera.updateProjectionMatrix() }, 2.5)
+  .to(lookAtTarget, { x: 0.3, y: 0, ease: 'power1.inOut', duration: 1 }, 2.5)
 
   /* ==========================================
-     PHASE 4 — Voyage → Produits (morphing inverse)
+     PHASE 4 — SWAP inverse (sphere → grain)
      ========================================== */
 
-  /* 4.1 — Globe commence à vibrer + flash */
-  .to(state, { flash: 0.6, ease: 'power2.out', duration: 0.15 }, 3.7)
-  .to(state, { flash: 0, ease: 'power2.in', duration: 0.25 }, 3.85)
+  /* 4.1 — Flash + SWAP INSTANTANÉ au moment où morph repasse à 0 */
+  .to(state, { flash: 0.7, ease: 'power2.out', duration: 0.1 }, 3.65)
+  .to(state, { flash: 0, ease: 'power2.in', duration: 0.3 }, 3.75)
 
-  /* 4.2 — Morphing inverse : sphere → grain */
-  .to(state, { morph: 0, ease: 'power2.inOut', duration: 0.5 }, 3.75)
+  /* Le globe reste visible jusqu'à morph = 0, puis swap */
+  .to(state, { globeOpacity: 0, ease: 'none', duration: 0.02 }, 3.75)
+  .to(state, { beanOpacity: 1, ease: 'none', duration: 0.02 }, 3.75)
 
-  /* 4.3 — Fondu croisé globe → grain */
-  .to(state, { globeOpacity: 0, ease: 'power2.in', duration: 0.3 }, 3.75)
-  .to(state, { beanOpacity: 1, ease: 'power2.out', duration: 0.3 }, 3.9)
+  /* 4.2 — Morphing inverse rapide (sphere → grain) */
+  .to(state, { morph: 0, ease: 'power3.inOut', duration: 0.35 }, 3.72)
 
-  /* 4.4 — Le grain ressort et se repositionne */
-  .to(beanGroup.rotation, { y: Math.PI * 7, x: 0.2, ease: 'none', duration: 0.6 }, 3.75)
-  .to(beanGroup.position, { x: 2.0, y: -1.8, z: -0.6, ease: 'power2.inOut', duration: 0.6 }, 3.75)
-  .to(beanMat.color, { r: 0.32, g: 0.18, b: 0.09, ease: 'power1.inOut', duration: 0.6 }, 3.75)
-  .to(beanGroup.scale, { x: 0.55, y: 0.55, z: 0.55, ease: 'power2.inOut', duration: 0.6 }, 3.75)
+  /* 4.3 — Grain ressort et se repositionne */
+  .to(beanGroup.rotation, { y: Math.PI * 7, x: 0.2, ease: 'none', duration: 0.6 }, 4.1)
+  .to(beanGroup.position, { x: 2.0, y: -1.8, z: -0.6, ease: 'power2.inOut', duration: 0.6 }, 4.1)
+  .to(beanMat.color, { r: 0.32, g: 0.18, b: 0.09, ease: 'power1.inOut', duration: 0.6 }, 4.1)
+  .to(beanGroup.scale, { x: 0.55, y: 0.55, z: 0.55, ease: 'power2.inOut', duration: 0.6 }, 4.1)
 
-  /* 4.5 — Caméra recule */
-  .to(cameraBase, { z: 6.2, x: 0.5, y: -0.4, ease: 'power2.inOut', duration: 0.6 }, 3.75)
-  .to(camera, { fov: 50, ease: 'power2.inOut', duration: 0.6, onUpdate: () => camera.updateProjectionMatrix() }, 3.75)
-  .to(lookAtTarget, { x: 0.5, y: -0.4, ease: 'power2.inOut', duration: 0.6 }, 3.75)
+  /* 4.4 — Caméra recule */
+  .to(cameraBase, { z: 6.2, x: 0.5, y: -0.4, ease: 'power2.inOut', duration: 0.6 }, 4.1)
+  .to(camera, { fov: 50, ease: 'power2.inOut', duration: 0.6, onUpdate: () => camera.updateProjectionMatrix() }, 4.1)
+  .to(lookAtTarget, { x: 0.5, y: -0.4, ease: 'power2.inOut', duration: 0.6 }, 4.1)
 
   /* ==========================================
-     PHASE 5 — Produits → Footer (disparition douce)
+     PHASE 5 — Produits → Footer
      ========================================== */
-  .to(beanGroup.rotation, { y: Math.PI * 9, ease: 'none', duration: 1 }, 4.4)
-  .to(beanGroup.position, { x: 1.6, y: -1.2, z: -0.3, ease: 'power1.inOut', duration: 1 }, 4.4)
-  .to(state, { beanOpacity: 0.35, ease: 'power2.out', duration: 1 }, 4.4)
-  .to(particles.material, { size: 0.04, opacity: 0.5, ease: 'none', duration: 1 }, 4.4)
-  .to(cameraBase, { z: 7, x: 0.3, y: -0.2, ease: 'power2.inOut', duration: 1 }, 4.4)
-  .to(camera, { fov: 52, ease: 'power2.inOut', duration: 1, onUpdate: () => camera.updateProjectionMatrix() }, 4.4)
-  .to(lookAtTarget, { x: 0.2, y: -0.3, ease: 'power2.inOut', duration: 1 }, 4.4);
+  .to(beanGroup.rotation, { y: Math.PI * 9, ease: 'none', duration: 1 }, 4.7)
+  .to(beanGroup.position, { x: 1.6, y: -1.2, z: -0.3, ease: 'power1.inOut', duration: 1 }, 4.7)
+  .to(state, { beanOpacity: 0.35, ease: 'power2.out', duration: 1 }, 4.7)
+  .to(particles.material, { size: 0.04, opacity: 0.5, ease: 'none', duration: 1 }, 4.7)
+  .to(cameraBase, { z: 7, x: 0.3, y: -0.2, ease: 'power2.inOut', duration: 1 }, 4.7)
+  .to(camera, { fov: 52, ease: 'power2.inOut', duration: 1, onUpdate: () => camera.updateProjectionMatrix() }, 4.7)
+  .to(lookAtTarget, { x: 0.2, y: -0.3, ease: 'power2.inOut', duration: 1 }, 4.7);
 
 /* ============================================
-   INTERACTIONS (drag + click)
+   INTERACTIONS
    ============================================ */
 const raycaster = new THREE.Raycaster();
 const pointerNDC = new THREE.Vector2();
@@ -541,25 +569,28 @@ const clock = new THREE.Clock();
 function tick(){
   const t = clock.getElapsedTime();
 
-  /* ===== MORPHING GÉOMÉTRIQUE (bean ↔ sphere) ===== */
-  if (state.morph > 0.001 && state.morph < 0.999) {
+  /* ===== MORPHING GÉOMÉTRIQUE ===== */
+  /* On morph UNIQUEMENT pendant la transition (pas au repos) */
+  const isMorphing = state.morph > 0.002 && state.morph < 0.998;
+
+  if (isMorphing) {
     const arr = beanGeo.attributes.position.array;
     for (let i = 0; i < arr.length; i++){
       arr[i] = beanOrigPositions[i] * (1 - state.morph) + sphereTargetPositions[i] * state.morph;
     }
     beanGeo.attributes.position.needsUpdate = true;
     beanGeo.computeVertexNormals();
-  } else if (state.morph <= 0.001 && beanGeo.attributes.position.array[0] !== beanOrigPositions[0]) {
+  } else if (state.morph <= 0.002 && beanGeo.attributes.position.array[0] !== beanOrigPositions[0]) {
     beanGeo.attributes.position.array.set(beanOrigPositions);
     beanGeo.attributes.position.needsUpdate = true;
     beanGeo.computeVertexNormals();
-  } else if (state.morph >= 0.999 && beanGeo.attributes.position.array[0] !== sphereTargetPositions[0]) {
+  } else if (state.morph >= 0.998 && beanGeo.attributes.position.array[0] !== sphereTargetPositions[0]) {
     beanGeo.attributes.position.array.set(sphereTargetPositions);
     beanGeo.attributes.position.needsUpdate = true;
     beanGeo.computeVertexNormals();
   }
 
-  /* ===== Flash sprite ===== */
+  /* ===== Flash ===== */
   flashMat.opacity = state.flash;
 
   /* ===== Rotation grain ===== */
@@ -568,7 +599,14 @@ function tick(){
   }
   beanMat.opacity = state.beanOpacity;
 
-  /* ===== Rotation globe (auto) ===== */
+  /* Toggle transparent seulement pendant les fondus (fix z-fighting) */
+  const shouldBeTransparent = state.beanOpacity < 0.98;
+  if (beanMat.transparent !== shouldBeTransparent) {
+    beanMat.transparent = shouldBeTransparent;
+    beanMat.needsUpdate = true;
+  }
+
+  /* ===== Rotation globe ===== */
   if (state.globeOpacity > 0.01 && !isDragging) {
     globeInner.rotation.y += 0.0015;
   }
