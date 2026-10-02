@@ -1,5 +1,6 @@
 // ============================================
 // MÉRIDIEN — Three.js + GSAP
+// Bean + Globe 3D interactif
 // ============================================
 
 import * as THREE from 'three';
@@ -39,15 +40,30 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.2;
 
 /* ---------- Lights ---------- */
-scene.add(new THREE.AmbientLight(0xffffff, 0.4));
-const key = new THREE.DirectionalLight(0xfff2d6, 1.8);
+scene.add(new THREE.AmbientLight(0xffffff, 0.45));
+const key = new THREE.DirectionalLight(0xfff2d6, 1.9);
 key.position.set(3, 4, 3); scene.add(key);
 const gold = new THREE.PointLight(0xC9A227, 8, 14);
 gold.position.set(-2, 1, 3); scene.add(gold);
 const rim = new THREE.PointLight(0x8B5E3C, 5, 14);
 rim.position.set(2, -1, -3); scene.add(rim);
 
-/* ---------- Texture de bruit réaliste (fBm multi-octaves) ---------- */
+// lumière dédiée au globe (chaleur dorée)
+const globeLight = new THREE.PointLight(0xC9A227, 6, 12);
+globeLight.position.set(2, 2, 3);
+scene.add(globeLight);
+
+/* ============================================
+   ÉTAT GLOBAL (pour GSAP)
+   ============================================ */
+const state = {
+  beanOpacity: 1,
+  globeOpacity: 0,
+};
+
+/* ============================================
+   TEXTURE DE BRUIT RÉALISTE
+   ============================================ */
 function fbmTexture(size = 512){
   const c = document.createElement('canvas');
   c.width = c.height = size;
@@ -98,7 +114,9 @@ function fbmTexture(size = 512){
   return tex;
 }
 
-/* ---------- Grain de café réaliste ---------- */
+/* ============================================
+   GRAIN DE CAFÉ
+   ============================================ */
 function createBean(){
   const geo = new THREE.SphereGeometry(1, 200, 200);
   const pos = geo.attributes.position;
@@ -107,22 +125,18 @@ function createBean(){
   for (let i = 0; i < pos.count; i++){
     v.fromBufferAttribute(pos, i);
 
-    // Forme : ellipsoïde
     v.x *= 0.75;
     v.y *= 0.85;
     v.z *= 1.32;
 
-    // Rainure centrale sur +X
     if (v.x > 0){
       const creaseY = Math.exp(-Math.pow(v.y / 0.16, 2));
       const creaseZ = Math.exp(-Math.pow(v.z / 1.0, 4));
       v.x -= creaseY * creaseZ * 0.45;
     }
 
-    // Méplat sous le grain
     v.x -= Math.exp(-Math.pow(v.x / 0.5, 2)) * 0.05 * Math.sign(v.x);
 
-    // Micro-reliefs
     v.x += Math.sin(v.z * 8 + v.x * 3) * 0.02;
     v.y += Math.cos(v.y * 7 + v.z * 2) * 0.018;
     v.z += Math.sin(v.x * 12 + v.y * 5) * 0.012;
@@ -144,6 +158,8 @@ function createBean(){
     sheenRoughness: 0.8,
     bumpMap: bump,
     bumpScale: 0.2,
+    transparent: true,
+    opacity: 1,
   });
 
   return new THREE.Mesh(geo, mat);
@@ -155,7 +171,106 @@ beanGroup.add(bean);
 beanGroup.position.set(1.4, 0, 0);
 scene.add(beanGroup);
 
-/* ---------- Particules dorées ---------- */
+/* ============================================
+   GLOBE 3D (Terre + marqueurs)
+   ============================================ */
+const globeGroup = new THREE.Group();
+globeGroup.position.set(0.3, 0, 0);
+scene.add(globeGroup);
+
+/* --- Terre --- */
+const earthGeo = new THREE.SphereGeometry(1.15, 64, 64);
+const earthMat = new THREE.MeshStandardMaterial({
+  color: 0xffffff,
+  roughness: 0.9,
+  metalness: 0.05,
+  transparent: true,
+  opacity: 0,
+});
+const earth = new THREE.Mesh(earthGeo, earthMat);
+earth.userData.baseOpacity = 1;
+globeGroup.add(earth);
+
+// Chargement de la texture Terre
+const textureLoader = new THREE.TextureLoader();
+textureLoader.load(
+  'https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg',
+  (tex) => {
+    earthMat.map = tex;
+    earthMat.needsUpdate = true;
+  },
+  undefined,
+  (err) => {
+    console.warn('Texture Terre indisponible, fallback couleur', err);
+    earthMat.color = new THREE.Color(0x2a3a4a);
+  }
+);
+
+/* --- Atmosphère (halo doré) --- */
+const atmGeo = new THREE.SphereGeometry(1.32, 48, 48);
+const atmMat = new THREE.MeshBasicMaterial({
+  color: 0xC9A227,
+  transparent: true,
+  opacity: 0,
+  blending: THREE.AdditiveBlending,
+  side: THREE.BackSide,
+});
+const atmosphere = new THREE.Mesh(atmGeo, atmMat);
+atmosphere.userData.baseOpacity = 0.18;
+globeGroup.add(atmosphere);
+
+/* --- Marqueurs d'origine --- */
+function latLonToVec3(lat, lon, r){
+  const phi = (90 - lat) * Math.PI / 180;
+  const theta = (lon + 180) * Math.PI / 180;
+  return new THREE.Vector3(
+    -r * Math.sin(phi) * Math.cos(theta),
+     r * Math.cos(phi),
+     r * Math.sin(phi) * Math.sin(theta)
+  );
+}
+
+const origins = [
+  { name: 'Yirgacheffe', lat: 6.16,  lon: 38.20  },
+  { name: 'Huila',       lat: 2.53,  lon: -75.52 },
+  { name: 'Cerrado',     lat: -15.78, lon: -47.93 },
+];
+
+const markers = [];
+origins.forEach((o, i) => {
+  const pos = latLonToVec3(o.lat, o.lon, 1.18);
+
+  // point doré
+  const mGeo = new THREE.SphereGeometry(0.028, 16, 16);
+  const mMat = new THREE.MeshBasicMaterial({
+    color: 0xC9A227,
+    transparent: true,
+    opacity: 0,
+  });
+  const m = new THREE.Mesh(mGeo, mMat);
+  m.position.copy(pos);
+  m.userData.baseOpacity = 1;
+  globeGroup.add(m);
+
+  // halo pulsant
+  const hGeo = new THREE.SphereGeometry(0.075, 16, 16);
+  const hMat = new THREE.MeshBasicMaterial({
+    color: 0xC9A227,
+    transparent: true,
+    opacity: 0,
+    blending: THREE.AdditiveBlending,
+  });
+  const halo = new THREE.Mesh(hGeo, hMat);
+  halo.position.copy(pos);
+  halo.userData.baseOpacity = 0.45;
+  globeGroup.add(halo);
+
+  markers.push({ dot: m, halo });
+});
+
+/* ============================================
+   PARTICULES DORÉES
+   ============================================ */
 const pCount = 500;
 const pPos = new Float32Array(pCount * 3);
 for (let i = 0; i < pCount * 3; i += 3){
@@ -182,7 +297,9 @@ const particles = new THREE.Points(pGeo, new THREE.PointsMaterial({
 }));
 scene.add(particles);
 
-/* ---------- NARRATION AU SCROLL (zigzag) ---------- */
+/* ============================================
+   TIMELINE SCROLL
+   ============================================ */
 const tl = gsap.timeline({
   scrollTrigger: {
     trigger: document.body,
@@ -193,38 +310,50 @@ const tl = gsap.timeline({
 });
 
 tl
-  // Hero → Origine : grain descend à DROITE
-  .to(beanGroup.rotation, { y: Math.PI * 2, x: 0.4, ease: 'none' }, 0)
-  .to(beanGroup.position, { x: 2.2, y: -1.2, z: 0.5, ease: 'none' }, 0)
-  .to(beanGroup.scale, { x: 0.85, y: 0.85, z: 0.85, ease: 'none' }, 0)
+  /* --- 0 → 1 : Hero → Origine (grain descend à droite) --- */
+  .to(beanGroup.rotation, { y: Math.PI * 2, x: 0.4, ease: 'none', duration: 1 }, 0)
+  .to(beanGroup.position, { x: 2.2, y: -1.2, z: 0.5, ease: 'none', duration: 1 }, 0)
+  .to(beanGroup.scale, { x: 0.85, y: 0.85, z: 0.85, ease: 'none', duration: 1 }, 0)
 
-  // Origine → Voyage : remonte à GAUCHE + torréfaction
-  .to(beanGroup.rotation, { y: Math.PI * 4, x: -0.5, ease: 'none' }, 1)
-  .to(beanGroup.position, { x: -2.3, y: 1.4, z: 0.2, ease: 'none' }, 1)
-  .to(bean.material.color, { r: 0.45, g: 0.25, b: 0.12, ease: 'none' }, 1)
-  .to(bean.material, { roughness: 0.48, ease: 'none' }, 1)
-  .to(beanGroup.scale, { x: 1.0, y: 1.0, z: 1.0, ease: 'none' }, 1)
+  /* --- 1 → 2 : Origine → Voyage (grain remonte à gauche + torréfaction, puis s'efface) --- */
+  .to(beanGroup.rotation, { y: Math.PI * 4, x: -0.5, ease: 'none', duration: 1 }, 1)
+  .to(beanGroup.position, { x: -2.3, y: 1.4, z: 0.2, ease: 'none', duration: 1 }, 1)
+  .to(bean.material.color, { r: 0.45, g: 0.25, b: 0.12, ease: 'none', duration: 1 }, 1)
+  .to(bean.material, { roughness: 0.48, ease: 'none', duration: 1 }, 1)
+  .to(beanGroup.scale, { x: 1.0, y: 1.0, z: 1.0, ease: 'none', duration: 1 }, 1)
+  // Fondu croisé grain → globe (au milieu de la transition)
+  .to(state, { beanOpacity: 0, ease: 'power2.in', duration: 0.6 }, 1.4)
+  .to(state, { globeOpacity: 1, ease: 'power2.out', duration: 0.6 }, 1.4)
 
-  // Voyage → Produits : descend à DROITE + brun foncé
-  .to(beanGroup.rotation, { y: Math.PI * 6, x: 0.2, ease: 'none' }, 2)
-  .to(beanGroup.position, { x: 2.0, y: -1.8, z: -0.6, ease: 'none' }, 2)
-  .to(bean.material.color, { r: 0.28, g: 0.15, b: 0.08, ease: 'none' }, 2)
-  .to(beanGroup.scale, { x: 0.6, y: 0.6, z: 0.6, ease: 'none' }, 2)
+  /* --- 2 → 3 : Voyage (le globe tourne) --- */
+  .to(globeGroup.rotation, { y: Math.PI * 1.5, ease: 'none', duration: 1 }, 2)
 
-  // Produits → Footer : disparition en poussière
-  .to(beanGroup.scale, { x: 0.001, y: 0.001, z: 0.001, ease: 'power2.in' }, 3)
-  .to(beanGroup.rotation, { y: Math.PI * 10, ease: 'none' }, 3)
-  .to(beanGroup.position, { y: -3, x: 0, ease: 'power1.in' }, 3)
-  .to(particles.material, { size: 0.02, opacity: 0.15, ease: 'none' }, 3);
+  /* --- 3 → 4 : Voyage → Produits (globe s'efface, grain revient brun foncé) --- */
+  .to(state, { globeOpacity: 0, ease: 'power2.in', duration: 0.6 }, 3)
+  .to(state, { beanOpacity: 1, ease: 'power2.out', duration: 0.6 }, 3)
+  .to(beanGroup.rotation, { y: Math.PI * 6, x: 0.2, ease: 'none', duration: 1 }, 3)
+  .to(beanGroup.position, { x: 2.0, y: -1.8, z: -0.6, ease: 'none', duration: 1 }, 3)
+  .to(bean.material.color, { r: 0.28, g: 0.15, b: 0.08, ease: 'none', duration: 1 }, 3)
+  .to(beanGroup.scale, { x: 0.6, y: 0.6, z: 0.6, ease: 'none', duration: 1 }, 3)
 
-/* ---------- Souris (parallaxe) ---------- */
+  /* --- 4 → 5 : Produits → Footer (disparition en poussière) --- */
+  .to(beanGroup.scale, { x: 0.001, y: 0.001, z: 0.001, ease: 'power2.in', duration: 1 }, 4)
+  .to(beanGroup.rotation, { y: Math.PI * 10, ease: 'none', duration: 1 }, 4)
+  .to(beanGroup.position, { y: -3, x: 0, ease: 'power1.in', duration: 1 }, 4)
+  .to(particles.material, { size: 0.02, opacity: 0.15, ease: 'none', duration: 1 }, 4);
+
+/* ============================================
+   SOURIS (parallaxe)
+   ============================================ */
 const mouse = { x: 0, y: 0 };
 addEventListener('mousemove', e => {
   mouse.x = (e.clientX / sizes.w) * 2 - 1;
   mouse.y = -((e.clientY / sizes.h) * 2 - 1);
 });
 
-/* ---------- Resize ---------- */
+/* ============================================
+   RESIZE
+   ============================================ */
 addEventListener('resize', () => {
   sizes.w = innerWidth; sizes.h = innerHeight;
   camera.aspect = sizes.w / sizes.h;
@@ -232,19 +361,49 @@ addEventListener('resize', () => {
   renderer.setSize(sizes.w, sizes.h);
 });
 
-/* ---------- Loop ---------- */
+/* ============================================
+   BOUCLE D'ANIMATION
+   ============================================ */
 const clock = new THREE.Clock();
+
 function tick(){
   const t = clock.getElapsedTime();
 
+  /* --- Grain --- */
   beanGroup.rotation.y += 0.0025;
+  bean.material.opacity = state.beanOpacity;
+  bean.material.transparent = true;
 
+  /* --- Globe --- */
+  if (state.globeOpacity > 0.01){
+    globeGroup.rotation.y += 0.0018;
+  }
+
+  // pulsation des marqueurs
+  markers.forEach((m, i) => {
+    const pulse = 1 + Math.sin(t * 2.2 + i * 0.8) * 0.35;
+    m.dot.scale.setScalar(pulse);
+    const hpulse = 1 + Math.sin(t * 2.2 + i * 0.8) * 0.55;
+    m.halo.scale.setScalar(hpulse);
+  });
+
+  // opacités du globe (Terre + atmosphère + marqueurs)
+  globeGroup.traverse(child => {
+    if (child.material && child.userData.baseOpacity !== undefined){
+      child.material.opacity = state.globeOpacity * child.userData.baseOpacity;
+      child.material.transparent = true;
+    }
+  });
+
+  /* --- Particules --- */
   particles.rotation.y = t * 0.05;
   particles.rotation.x = Math.sin(t * 0.3) * 0.05;
 
+  /* --- Lumière dorée orbite autour du grain --- */
   gold.position.x = Math.cos(t * 0.6) * 3 + beanGroup.position.x;
   gold.position.z = Math.sin(t * 0.6) * 3;
 
+  /* --- Caméra parallaxe --- */
   camera.position.x += (mouse.x * 0.35 - camera.position.x) * 0.05;
   camera.position.y += (mouse.y * 0.25 - camera.position.y) * 0.05;
   camera.lookAt(0, 0, 0);
