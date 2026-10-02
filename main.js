@@ -1,11 +1,11 @@
 // ============================================
 // MÉRIDIEN — Three.js + GSAP
 // Morphing grain → globe + interactions
+// Fix points noirs : suppression atmosphère additive + halos opaques
 // ============================================
 
 import * as THREE from 'three';
 
-/* ---------- Mobile ---------- */
 const isMobile = window.matchMedia('(max-width: 768px)').matches
               || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
@@ -59,29 +59,24 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: !isMobile, alpha: 
 renderer.setSize(sizes.w, sizes.h);
 renderer.setPixelRatio(PERF.pixelRatio);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = 1.0;
 
 /* ---------- Lights ---------- */
-scene.add(new THREE.AmbientLight(0xffffff, 0.75));
-const hemi = new THREE.HemisphereLight(0xFFF2D6, 0x3a2416, 0.6);
-scene.add(hemi);
-const key = new THREE.DirectionalLight(0xfff2d6, 1.3);
+scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+scene.add(new THREE.HemisphereLight(0xFFF2D6, 0x3a2416, 0.7));
+const key = new THREE.DirectionalLight(0xfff2d6, 1.2);
 key.position.set(3, 4, 3); scene.add(key);
-const fill = new THREE.DirectionalLight(0xF2E9DC, 0.85);
+const fill = new THREE.DirectionalLight(0xF2E9DC, 0.7);
 fill.position.set(0, 1, 5); scene.add(fill);
-const topFill = new THREE.DirectionalLight(0xF2E9DC, 0.5);
-topFill.position.set(0, 5, 1); scene.add(topFill);
-const gold = new THREE.PointLight(0xC9A227, 5, 14);
+const gold = new THREE.PointLight(0xC9A227, 4, 14);
 gold.position.set(-2, 1, 3); scene.add(gold);
-const rim = new THREE.PointLight(0xFFE5B0, 3, 12);
+const rim = new THREE.PointLight(0xFFE5B0, 2, 12);
 rim.position.set(3, 2, -2); scene.add(rim);
-const globeLight = new THREE.PointLight(0xC9A227, 4.5, 12);
-globeLight.position.set(2, 2, 3); scene.add(globeLight);
 
 /* ---------- State ---------- */
 const state = {
   beanOpacity: 1,
-  globeOpacity: 0,
+  globeVisible: false,
   morph: 0,
   flash: 0,
 };
@@ -109,17 +104,19 @@ function fbmTexture(size = PERF.fbmSize){
     const cc = hash(xi, yi + 1), d = hash(xi + 1, yi + 1);
     return a * (1 - u) * (1 - v) + b * u * (1 - v) + cc * (1 - u) * v + d * u * v;
   };
-  const fbm = (x, y) => {
+  const fbm = (x, y, octaves = 6) => {
     let v = 0, amp = 0.5, freq = 1;
-    for (let i = 0; i < 5; i++){ v += amp * noise(x*freq, y*freq); freq *= 2; amp *= 0.5; }
+    for (let i = 0; i < octaves; i++){ v += amp * noise(x*freq, y*freq); freq *= 2; amp *= 0.5; }
     return v;
   };
 
   for (let y = 0; y < size; y++){
     for (let x = 0; x < size; x++){
-      let n = fbm(x / 40, y / 40);
-      const vein = Math.sin((x / size) * Math.PI * 10 + fbm(x / 30, y / 30) * 8) * 0.5 + 0.5;
-      n = n * 0.65 + vein * 0.35;
+      let n = fbm(x / 25, y / 25, 6);
+      const micro = fbm(x / 3, y / 3, 3) * 0.15;
+      n = n * 0.75 + micro * 0.25;
+      const vein = Math.sin((x / size) * Math.PI * 14 + fbm(x / 20, y / 20, 4) * 10) * 0.5 + 0.5;
+      n = n * 0.82 + vein * 0.18;
       const v = Math.floor(n * 255);
       const i = (y * size + x) * 4;
       data[i] = data[i+1] = data[i+2] = v;
@@ -129,8 +126,44 @@ function fbmTexture(size = PERF.fbmSize){
   ctx.putImageData(img, 0, 0);
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(2, 3);
-  tex.anisotropy = 4;
+  tex.repeat.set(3, 5);
+  tex.anisotropy = 8;
+  return tex;
+}
+
+function roughnessTexture(size = 512){
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  const img = ctx.createImageData(size, size);
+  const data = img.data;
+  const hash = (x, y) => {
+    let n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+    return n - Math.floor(n);
+  };
+  const noise = (x, y) => {
+    const xi = Math.floor(x), yi = Math.floor(y);
+    const xf = x - xi, yf = y - yi;
+    const u = xf * xf * (3 - 2 * xf);
+    const v = yf * yf * (3 - 2 * yf);
+    const a = hash(xi, yi), b = hash(xi + 1, yi);
+    const cc = hash(xi, yi + 1), d = hash(xi + 1, yi + 1);
+    return a * (1 - u) * (1 - v) + b * u * (1 - v) + cc * (1 - u) * v + d * u * v;
+  };
+  for (let y = 0; y < size; y++){
+    for (let x = 0; x < size; x++){
+      const n = noise(x / 8, y / 8) * 0.5 + noise(x / 3, y / 3) * 0.5;
+      const r = 0.55 + n * 0.35;
+      const v = Math.floor(r * 255);
+      const i = (y * size + x) * 4;
+      data[i] = data[i+1] = data[i+2] = v;
+      data[i+3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(4, 6);
   return tex;
 }
 
@@ -160,7 +193,7 @@ function dotTex(){
 }
 
 /* ============================================
-   GRAIN DE CAFÉ
+   GRAIN
    ============================================ */
 const SPHERE_TARGET_RADIUS = 1.15;
 
@@ -178,9 +211,11 @@ function buildBeanGeometry(){
       v.x -= creaseY * creaseZ * 0.32;
     }
     v.x -= Math.exp(-Math.pow(v.x / 0.5, 2)) * 0.04 * Math.sign(v.x);
-    v.x += Math.sin(v.z * 8 + v.x * 3) * 0.012;
-    v.y += Math.cos(v.y * 7 + v.z * 2) * 0.011;
-    v.z += Math.sin(v.x * 12 + v.y * 5) * 0.008;
+    v.x += Math.sin(v.z * 14 + v.x * 6) * 0.018;
+    v.y += Math.cos(v.y * 12 + v.z * 4) * 0.016;
+    v.z += Math.sin(v.x * 18 + v.y * 8) * 0.014;
+    v.x += Math.sin(v.y * 25 + v.z * 15) * 0.006;
+    v.y += Math.cos(v.z * 22 + v.x * 11) * 0.005;
     pos.setXYZ(i, v.x, v.y, v.z);
   }
   geo.computeVertexNormals();
@@ -198,17 +233,20 @@ const beanOrigPositions = new Float32Array(beanGeo.attributes.position.array);
 const sphereTargetPositions = new Float32Array(sphereGeo.attributes.position.array);
 
 const bump = fbmTexture(PERF.fbmSize);
+const rough = roughnessTexture(512);
+
 const beanMat = new THREE.MeshPhysicalMaterial({
-  color: 0x6a3f1e,
-  roughness: 0.72,
-  metalness: 0.03,
-  clearcoat: 0.25,
-  clearcoatRoughness: 0.7,
-  sheen: 0.2,
+  color: 0x5c3418,
+  roughness: 0.85,
+  roughnessMap: rough,
+  metalness: 0.02,
+  clearcoat: 0.15,
+  clearcoatRoughness: 0.85,
+  sheen: 0.15,
   sheenColor: new THREE.Color(0xC9A227),
-  sheenRoughness: 0.9,
-  bumpMap: bump, bumpScale: 0.08,
-  transparent: false, opacity: 1,
+  sheenRoughness: 0.95,
+  bumpMap: bump,
+  bumpScale: 0.18,
 });
 
 const bean = new THREE.Mesh(beanGeo, beanMat);
@@ -218,47 +256,43 @@ beanGroup.position.set(START.beanX, START.beanY, START.beanZ);
 scene.add(beanGroup);
 
 /* ============================================
-   GLOBE 3D
+   GLOBE 3D — SANS atmosphère additive
    ============================================ */
 const globeGroup = new THREE.Group();
 globeGroup.position.set(0.3, 0, 0);
+globeGroup.visible = false;
 scene.add(globeGroup);
 
 const globeInner = new THREE.Group();
 globeGroup.add(globeInner);
 
+/* Terre — opaque, sobre */
 const earthGeo = new THREE.SphereGeometry(SPHERE_TARGET_RADIUS, PERF.earthSegments, PERF.earthSegments);
 const earthMat = new THREE.MeshStandardMaterial({
-  color: 0xffffff, roughness: 0.9, metalness: 0.05,
-  transparent: true, opacity: 0,
+  color: 0xffffff,
+  roughness: 0.95,
+  metalness: 0.0,
+  transparent: false,
+  opacity: 1,
   depthWrite: true,
+  depthTest: true,
 });
 const earth = new THREE.Mesh(earthGeo, earthMat);
-earth.userData.baseOpacity = 1;
-earth.userData.isEarth = true;
 globeInner.add(earth);
 
 const textureLoader = new THREE.TextureLoader();
 textureLoader.load(
   'https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg',
-  (tex) => { earthMat.map = tex; earthMat.needsUpdate = true; },
+  (tex) => {
+    tex.colorSpace = THREE.SRGBColorSpace;
+    earthMat.map = tex;
+    earthMat.needsUpdate = true;
+  },
   undefined,
   () => { earthMat.color = new THREE.Color(0x2a3a4a); }
 );
 
-/* Atmosphère */
-const atmGeo = new THREE.SphereGeometry(SPHERE_TARGET_RADIUS * 1.15, 32, 32);
-const atmMat = new THREE.MeshBasicMaterial({
-  color: 0xC9A227, transparent: true, opacity: 0,
-  blending: THREE.AdditiveBlending, side: THREE.BackSide,
-  depthWrite: false,
-});
-const atmosphere = new THREE.Mesh(atmGeo, atmMat);
-atmosphere.userData.baseOpacity = 0.18;
-atmosphere.userData.isAtmosphere = true;
-globeInner.add(atmosphere);
-
-/* Marqueurs */
+/* Marqueurs — sphère opaque + anneau opaque (PAS additif) */
 function latLonToVec3(lat, lon, r){
   const phi = (90 - lat) * Math.PI / 180;
   const theta = (lon + 180) * Math.PI / 180;
@@ -277,43 +311,47 @@ const origins = [
 
 const markers = [];
 origins.forEach((o, i) => {
-  /* Position légèrement au-dessus de la surface pour éviter le z-fighting */
-  const pos = latLonToVec3(o.lat, o.lon, SPHERE_TARGET_RADIUS * 1.06);
+  const pos = latLonToVec3(o.lat, o.lon, SPHERE_TARGET_RADIUS * 1.02);
 
-  /* Point doré — depthTest: true pour être correctement occulté par la Terre */
-  const mGeo = new THREE.SphereGeometry(0.038, 14, 14);
-  const mMat = new THREE.MeshBasicMaterial({
-    color: 0xC9A227, transparent: true, opacity: 0,
-    depthTest: true,
+  /* Point doré opaque */
+  const mGeo = new THREE.SphereGeometry(0.055, 20, 20);
+  const mMat = new THREE.MeshStandardMaterial({
+    color: 0xC9A227,
+    roughness: 0.35,
+    metalness: 0.4,
+    emissive: 0xC9A227,
+    emissiveIntensity: 0.5,
+    transparent: false,
     depthWrite: true,
+    depthTest: true,
   });
   const m = new THREE.Mesh(mGeo, mMat);
   m.position.copy(pos);
-  m.userData.baseOpacity = 1;
   m.userData.origin = o.product;
   m.userData.index = i;
-  m.userData.isMarker = true;
   globeInner.add(m);
 
-  /* Halo — PAS de depthWrite pour éviter les artefacts, mais depthTest ON */
-  const hGeo = new THREE.SphereGeometry(0.085, 14, 14);
-  const hMat = new THREE.MeshBasicMaterial({
-    color: 0xC9A227, transparent: true, opacity: 0,
-    blending: THREE.AdditiveBlending,
-    depthTest: true,
+  /* Anneau plat doré (à la place du halo additif) */
+  const rGeo = new THREE.RingGeometry(0.075, 0.095, 32);
+  const rMat = new THREE.MeshBasicMaterial({
+    color: 0xFFE5B0,
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: 0.9,
     depthWrite: false,
+    depthTest: true,
   });
-  const halo = new THREE.Mesh(hGeo, hMat);
-  halo.position.copy(pos);
-  halo.userData.baseOpacity = 0.5;
-  halo.userData.isMarker = true;
-  globeInner.add(halo);
+  const ring = new THREE.Mesh(rGeo, rMat);
+  ring.position.copy(pos);
+  /* L'anneau doit être orienté vers l'extérieur du globe */
+  ring.lookAt(pos.clone().multiplyScalar(2));
+  globeInner.add(ring);
 
-  markers.push({ dot: m, halo });
+  markers.push({ dot: m, ring });
 });
 
 /* ============================================
-   FLASH
+   FLASH + RING
    ============================================ */
 const flashMat = new THREE.SpriteMaterial({
   map: radialTex(),
@@ -329,19 +367,18 @@ flash.scale.set(6, 6, 1);
 flash.position.set(0.3, 0, 0);
 scene.add(flash);
 
-/* Anneau de choc */
 const ringGeo = new THREE.RingGeometry(0.5, 0.6, 64);
 const ringMat = new THREE.MeshBasicMaterial({
   color: 0xC9A227, transparent: true, opacity: 0,
   side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
-  depthWrite: false,
+  depthWrite: false, depthTest: false,
 });
 const shockRing = new THREE.Mesh(ringGeo, ringMat);
 shockRing.position.set(0.3, 0, 0);
 scene.add(shockRing);
 
 /* ============================================
-   PARTICULES DORÉES
+   PARTICULES
    ============================================ */
 const pCount = PERF.particleCount;
 const pPos = new Float32Array(pCount * 3);
@@ -372,7 +409,7 @@ const tl = gsap.timeline({
 });
 
 tl
-  /* PHASE 1 — Hero → Origine */
+  /* PHASE 1 */
   .to(beanGroup.rotation, { y: Math.PI * 2, x: 0.4, ease: 'none', duration: 1 }, 0)
   .to(beanGroup.position, { x: START.beanX + 0.6, y: -1.3, z: 0.5, ease: 'none', duration: 1 }, 0)
   .to(beanGroup.scale, { x: 0.85, y: 0.85, z: 0.85, ease: 'none', duration: 1 }, 0)
@@ -391,16 +428,16 @@ tl
   .to(state, { morph: 1, ease: 'power3.inOut', duration: 0.35 }, 1.75)
 
   .to(state, { beanOpacity: 0, ease: 'none', duration: 0.02 }, 2.1)
-  .to(state, { globeOpacity: 1, ease: 'none', duration: 0.02 }, 2.1)
+  .to(state, { globeVisible: true, ease: 'none', duration: 0.02 }, 2.1)
 
-  .to(state, { flash: 0.85, ease: 'power2.out', duration: 0.1 }, 2.05)
+  .to(state, { flash: 0.7, ease: 'power2.out', duration: 0.1 }, 2.05)
   .to(state, { flash: 0, ease: 'power2.in', duration: 0.35 }, 2.15)
   .fromTo(shockRing.scale,
     { x: 0.5, y: 0.5, z: 0.5 },
     { x: 7, y: 7, z: 7, ease: 'power3.out', duration: 0.5 }, 2.1)
   .fromTo(ringMat,
     { opacity: 0 },
-    { opacity: 0.7, ease: 'power2.out', duration: 0.08 }, 2.1)
+    { opacity: 0.6, ease: 'power2.out', duration: 0.08 }, 2.1)
   .to(ringMat, { opacity: 0, ease: 'power2.in', duration: 0.4 }, 2.18)
 
   /* PHASE 3 — Voyage */
@@ -409,25 +446,25 @@ tl
   .to(camera, { fov: 40, ease: 'power1.inOut', duration: 1, onUpdate: () => camera.updateProjectionMatrix() }, 2.5)
   .to(lookAtTarget, { x: 0.3, y: 0, ease: 'power1.inOut', duration: 1 }, 2.5)
 
-  /* PHASE 4 — SWAP inverse */
-  .to(state, { flash: 0.7, ease: 'power2.out', duration: 0.1 }, 3.65)
+  /* PHASE 4 */
+  .to(state, { flash: 0.6, ease: 'power2.out', duration: 0.1 }, 3.65)
   .to(state, { flash: 0, ease: 'power2.in', duration: 0.3 }, 3.75)
 
-  .to(state, { globeOpacity: 0, ease: 'none', duration: 0.02 }, 3.75)
+  .to(state, { globeVisible: false, ease: 'none', duration: 0.02 }, 3.75)
   .to(state, { beanOpacity: 1, ease: 'none', duration: 0.02 }, 3.75)
 
   .to(state, { morph: 0, ease: 'power3.inOut', duration: 0.35 }, 3.72)
 
   .to(beanGroup.rotation, { y: Math.PI * 7, x: 0.2, ease: 'none', duration: 0.6 }, 4.1)
   .to(beanGroup.position, { x: 2.0, y: -1.8, z: -0.6, ease: 'power2.inOut', duration: 0.6 }, 4.1)
-  .to(beanMat.color, { r: 0.32, g: 0.18, b: 0.09, ease: 'power1.inOut', duration: 0.6 }, 4.1)
+  .to(beanMat.color, { r: 0.28, g: 0.15, b: 0.07, ease: 'power1.inOut', duration: 0.6 }, 4.1)
   .to(beanGroup.scale, { x: 0.55, y: 0.55, z: 0.55, ease: 'power2.inOut', duration: 0.6 }, 4.1)
 
   .to(cameraBase, { z: 6.2, x: 0.5, y: -0.4, ease: 'power2.inOut', duration: 0.6 }, 4.1)
   .to(camera, { fov: 50, ease: 'power2.inOut', duration: 0.6, onUpdate: () => camera.updateProjectionMatrix() }, 4.1)
   .to(lookAtTarget, { x: 0.5, y: -0.4, ease: 'power2.inOut', duration: 0.6 }, 4.1)
 
-  /* PHASE 5 — Produits → Footer */
+  /* PHASE 5 */
   .to(beanGroup.rotation, { y: Math.PI * 9, ease: 'none', duration: 1 }, 4.7)
   .to(beanGroup.position, { x: 1.6, y: -1.2, z: -0.3, ease: 'power1.inOut', duration: 1 }, 4.7)
   .to(state, { beanOpacity: 0.35, ease: 'power2.out', duration: 1 }, 4.7)
@@ -473,7 +510,7 @@ document.addEventListener('pointermove', (e) => {
     prevPointer.y = e.clientY;
   }
 
-  if (state.globeOpacity > 0.5 && !isDragging) {
+  if (state.globeVisible && !isDragging) {
     updatePointerNDC(e);
     const idx = hitMarker();
     document.body.style.cursor = idx >= 0 ? 'pointer' : '';
@@ -483,7 +520,7 @@ document.addEventListener('pointermove', (e) => {
 });
 
 document.addEventListener('pointerdown', (e) => {
-  if (state.globeOpacity < 0.5) return;
+  if (!state.globeVisible) return;
   if (e.target.closest('a, button')) return;
 
   isDragging = true;
@@ -505,7 +542,7 @@ document.addEventListener('pointerup', (e) => {
   if (!isMobile) lenis.start();
   if (wasDrag) return;
 
-  if (state.globeOpacity > 0.5) {
+  if (state.globeVisible) {
     updatePointerNDC(e);
     const idx = hitMarker();
     if (idx >= 0) {
@@ -567,96 +604,48 @@ function tick(){
     beanGeo.computeVertexNormals();
   }
 
-  /* ===== Flash ===== */
   flashMat.opacity = state.flash;
 
-  /* ===== Grain ===== */
-  if (!isDragging || state.globeOpacity < 0.5) {
+  /* Grain */
+  if (!isDragging || !state.globeVisible) {
     beanGroup.rotation.y += 0.0025;
   }
   beanMat.opacity = state.beanOpacity;
-
-  const beanShouldBeTransparent = state.beanOpacity < 0.98;
-  if (beanMat.transparent !== beanShouldBeTransparent) {
-    beanMat.transparent = beanShouldBeTransparent;
+  if (beanMat.transparent !== (state.beanOpacity < 0.98)) {
+    beanMat.transparent = state.beanOpacity < 0.98;
     beanMat.needsUpdate = true;
   }
 
-  /* ===== GLOBE : TRANSPARENCE DYNAMIQUE (fix points noirs) ===== */
-  /* Le globe et les marqueurs ne sont transparents QUE pendant les fondus */
-  const globeVisible = state.globeOpacity > 0.02;
-  const globeFullyOpaque = state.globeOpacity > 0.98;
-
-  if (globeVisible) {
-    /* Terre : opaque dès qu'on atteint 0.98 */
-    const earthTransparent = !globeFullyOpaque;
-    if (earthMat.transparent !== earthTransparent) {
-      earthMat.transparent = earthTransparent;
-      earthMat.needsUpdate = true;
-    }
-    earthMat.opacity = state.globeOpacity;
-
-    /* Marqueurs : opaques dès qu'on atteint 0.98 */
-    markers.forEach(m => {
-      if (m.dot.material.transparent !== !globeFullyOpaque) {
-        m.dot.material.transparent = !globeFullyOpaque;
-        m.dot.material.needsUpdate = true;
-      }
-      if (m.halo.material.transparent !== !globeFullyOpaque) {
-        m.halo.material.transparent = !globeFullyOpaque;
-        m.halo.material.needsUpdate = true;
-      }
-      m.dot.material.opacity = state.globeOpacity;
-      m.halo.material.opacity = state.globeOpacity * 0.5;
-    });
-
-    /* Atmosphère : toujours transparente (additive blending) */
-    atmMat.opacity = state.globeOpacity * atmosphere.userData.baseOpacity;
-  } else {
-    /* Globe caché : on met tout à 0 */
-    earthMat.opacity = 0;
-    atmMat.opacity = 0;
-    markers.forEach(m => {
-      m.dot.material.opacity = 0;
-      m.halo.material.opacity = 0;
-    });
+  /* Globe — toggle visible (pas de fondu, donc pas de problème de tri) */
+  if (globeGroup.visible !== state.globeVisible) {
+    globeGroup.visible = state.globeVisible;
   }
 
-  /* ===== Rotation globe auto ===== */
-  if (state.globeOpacity > 0.01 && !isDragging) {
+  /* Rotation globe auto */
+  if (state.globeVisible && !isDragging) {
     globeInner.rotation.y += 0.0015;
   }
 
-  /* ===== Pulsation marqueurs ===== */
+  /* Pulsation des anneaux (pas des halos additifs) */
   markers.forEach((m, i) => {
     const pulse = 1 + Math.sin(t * 2.2 + i * 0.8) * 0.3;
     m.dot.scale.setScalar(pulse);
-    const hpulse = 1 + Math.sin(t * 2.2 + i * 0.8) * 0.55;
-    m.halo.scale.setScalar(hpulse);
+    const rpulse = 1 + Math.sin(t * 2.2 + i * 0.8) * 0.5;
+    m.ring.scale.setScalar(rpulse);
   });
 
-  /* ===== Particules ===== */
+  /* Particules */
   particles.rotation.y = t * 0.05;
   particles.rotation.x = Math.sin(t * 0.3) * 0.05;
 
-  /* ===== Lumière dorée orbite ===== */
+  /* Lumière dorée orbite */
   gold.position.x = Math.cos(t * 0.6) * 3 + beanGroup.position.x;
   gold.position.z = Math.sin(t * 0.6) * 3;
 
-  /* ===== Caméra ===== */
+  /* Caméra */
   cameraParallax.x += (mouse.x * 0.35 - cameraParallax.x) * 0.05;
   cameraParallax.y += (mouse.y * 0.25 - cameraParallax.y) * 0.05;
 
   camera.position.set(
     cameraBase.x + cameraParallax.x,
     cameraBase.y + cameraParallax.y,
-    cameraBase.z
-  );
-  camera.lookAt(lookAtTarget);
-
-  renderer.render(scene, camera);
-  requestAnimationFrame(tick);
-}
-tick();
-
-console.log('%cMéridien ☕🌍', 'font-family: serif; font-size: 20px; color: #C9A227;');
