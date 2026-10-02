@@ -1,7 +1,6 @@
 // ============================================
 // MÉRIDIEN — Three.js + GSAP
 // Morphing grain → globe + interactions
-// Fix points noirs : suppression atmosphère additive + halos opaques
 // ============================================
 
 import * as THREE from 'three';
@@ -256,7 +255,7 @@ beanGroup.position.set(START.beanX, START.beanY, START.beanZ);
 scene.add(beanGroup);
 
 /* ============================================
-   GLOBE 3D — SANS atmosphère additive
+   GLOBE 3D
    ============================================ */
 const globeGroup = new THREE.Group();
 globeGroup.position.set(0.3, 0, 0);
@@ -266,7 +265,6 @@ scene.add(globeGroup);
 const globeInner = new THREE.Group();
 globeGroup.add(globeInner);
 
-/* Terre — opaque, sobre */
 const earthGeo = new THREE.SphereGeometry(SPHERE_TARGET_RADIUS, PERF.earthSegments, PERF.earthSegments);
 const earthMat = new THREE.MeshStandardMaterial({
   color: 0xffffff,
@@ -292,7 +290,6 @@ textureLoader.load(
   () => { earthMat.color = new THREE.Color(0x2a3a4a); }
 );
 
-/* Marqueurs — sphère opaque + anneau opaque (PAS additif) */
 function latLonToVec3(lat, lon, r){
   const phi = (90 - lat) * Math.PI / 180;
   const theta = (lon + 180) * Math.PI / 180;
@@ -331,7 +328,7 @@ origins.forEach((o, i) => {
   m.userData.index = i;
   globeInner.add(m);
 
-  /* Anneau plat doré (à la place du halo additif) */
+  /* Anneau plat doré */
   const rGeo = new THREE.RingGeometry(0.075, 0.095, 32);
   const rMat = new THREE.MeshBasicMaterial({
     color: 0xFFE5B0,
@@ -343,7 +340,6 @@ origins.forEach((o, i) => {
   });
   const ring = new THREE.Mesh(rGeo, rMat);
   ring.position.copy(pos);
-  /* L'anneau doit être orienté vers l'extérieur du globe */
   ring.lookAt(pos.clone().multiplyScalar(2));
   globeInner.add(ring);
 
@@ -351,7 +347,7 @@ origins.forEach((o, i) => {
 });
 
 /* ============================================
-   FLASH + RING
+   FLASH + RING (transition)
    ============================================ */
 const flashMat = new THREE.SpriteMaterial({
   map: radialTex(),
@@ -440,7 +436,7 @@ tl
     { opacity: 0.6, ease: 'power2.out', duration: 0.08 }, 2.1)
   .to(ringMat, { opacity: 0, ease: 'power2.in', duration: 0.4 }, 2.18)
 
-  /* PHASE 3 — Voyage */
+  /* PHASE 3 */
   .to(globeGroup.rotation, { y: Math.PI * 0.9, ease: 'none', duration: 1 }, 2.5)
   .to(cameraBase, { z: 4.4, x: 0.5, y: -0.1, ease: 'power1.inOut', duration: 1 }, 2.5)
   .to(camera, { fov: 40, ease: 'power1.inOut', duration: 1, onUpdate: () => camera.updateProjectionMatrix() }, 2.5)
@@ -606,7 +602,7 @@ function tick(){
 
   flashMat.opacity = state.flash;
 
-  /* Grain */
+  /* ===== Grain ===== */
   if (!isDragging || !state.globeVisible) {
     beanGroup.rotation.y += 0.0025;
   }
@@ -616,17 +612,16 @@ function tick(){
     beanMat.needsUpdate = true;
   }
 
-  /* Globe — toggle visible (pas de fondu, donc pas de problème de tri) */
+  /* ===== Globe : toggle visible ===== */
   if (globeGroup.visible !== state.globeVisible) {
     globeGroup.visible = state.globeVisible;
   }
 
-  /* Rotation globe auto */
   if (state.globeVisible && !isDragging) {
     globeInner.rotation.y += 0.0015;
   }
 
-  /* Pulsation des anneaux (pas des halos additifs) */
+  /* ===== Pulsation des marqueurs ===== */
   markers.forEach((m, i) => {
     const pulse = 1 + Math.sin(t * 2.2 + i * 0.8) * 0.3;
     m.dot.scale.setScalar(pulse);
@@ -634,18 +629,28 @@ function tick(){
     m.ring.scale.setScalar(rpulse);
   });
 
-  /* Particules */
+  /* ===== Particules ===== */
   particles.rotation.y = t * 0.05;
   particles.rotation.x = Math.sin(t * 0.3) * 0.05;
 
-  /* Lumière dorée orbite */
+  /* ===== Lumière dorée ===== */
   gold.position.x = Math.cos(t * 0.6) * 3 + beanGroup.position.x;
   gold.position.z = Math.sin(t * 0.6) * 3;
 
-  /* Caméra */
+  /* ===== Caméra ===== */
   cameraParallax.x += (mouse.x * 0.35 - cameraParallax.x) * 0.05;
   cameraParallax.y += (mouse.y * 0.25 - cameraParallax.y) * 0.05;
 
   camera.position.set(
     cameraBase.x + cameraParallax.x,
     cameraBase.y + cameraParallax.y,
+    cameraBase.z
+  );
+  camera.lookAt(lookAtTarget);
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+tick();
+
+console.log('%cMéridien ☕
