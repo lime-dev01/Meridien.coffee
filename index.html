@@ -32,9 +32,11 @@
     </nav>
   </header>
 
-  <!-- Hero avec canvas 3D -->
+  <!-- Canvas 3D (fixe sur tout le viewport) -->
+  <canvas id="webgl"></canvas>
+
+  <!-- Hero -->
   <section class="hero" id="hero">
-    <canvas id="webgl"></canvas>
     <div class="hero__content">
       <p class="hero__eyebrow">Torréfacteur nomade — depuis 2024</p>
       <h1 class="hero__title">
@@ -100,12 +102,12 @@
     <p class="footer__copy">© 2025 Méridien — Torréfacteur nomade</p>
   </footer>
 
-  <!-- Lenis + GSAP (scripts classiques) -->
+  <!-- Lenis + GSAP -->
   <script src="https://cdn.jsdelivr.net/npm/lenis@1.1.14/dist/lenis.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
 
-  <!-- Three.js via importmap (module) -->
+  <!-- Three.js importmap -->
   <script type="importmap">
   {
     "imports": {
