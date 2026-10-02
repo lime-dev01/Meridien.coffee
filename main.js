@@ -39,72 +39,111 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.2;
 
 /* ---------- Lights ---------- */
-scene.add(new THREE.AmbientLight(0xffffff, 0.35));
-const key = new THREE.DirectionalLight(0xfff2d6, 1.6);
+scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+const key = new THREE.DirectionalLight(0xfff2d6, 1.8);
 key.position.set(3, 4, 3); scene.add(key);
-const gold = new THREE.PointLight(0xC9A227, 6, 14);
+const gold = new THREE.PointLight(0xC9A227, 8, 14);
 gold.position.set(-2, 1, 3); scene.add(gold);
-const rim = new THREE.PointLight(0x8B5E3C, 4, 14);
+const rim = new THREE.PointLight(0x8B5E3C, 5, 14);
 rim.position.set(2, -1, -3); scene.add(rim);
 
-/* ---------- Texture de bruit pour bump ---------- */
-function noiseTexture(size = 512){
+/* ---------- Texture de bruit réaliste (fBm multi-octaves) ---------- */
+function fbmTexture(size = 512){
   const c = document.createElement('canvas');
   c.width = c.height = size;
   const ctx = c.getContext('2d');
   const img = ctx.createImageData(size, size);
-  for (let i = 0; i < img.data.length; i += 4){
-    const n = 90 + Math.random() * 90;
-    img.data[i] = img.data[i+1] = img.data[i+2] = n;
-    img.data[i+3] = 255;
+  const data = img.data;
+
+  const hash = (x, y) => {
+    let n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+    return n - Math.floor(n);
+  };
+  const noise = (x, y) => {
+    const xi = Math.floor(x), yi = Math.floor(y);
+    const xf = x - xi, yf = y - yi;
+    const u = xf * xf * (3 - 2 * xf);
+    const v = yf * yf * (3 - 2 * yf);
+    const a = hash(xi, yi);
+    const b = hash(xi + 1, yi);
+    const cc = hash(xi, yi + 1);
+    const d = hash(xi + 1, yi + 1);
+    return a * (1 - u) * (1 - v) + b * u * (1 - v) + cc * (1 - u) * v + d * u * v;
+  };
+  const fbm = (x, y) => {
+    let v = 0, amp = 0.5, freq = 1;
+    for (let i = 0; i < 5; i++){
+      v += amp * noise(x * freq, y * freq);
+      freq *= 2; amp *= 0.5;
+    }
+    return v;
+  };
+
+  for (let y = 0; y < size; y++){
+    for (let x = 0; x < size; x++){
+      let n = fbm(x / 40, y / 40);
+      const vein = Math.sin((x / size) * Math.PI * 10 + fbm(x / 30, y / 30) * 8) * 0.5 + 0.5;
+      n = n * 0.65 + vein * 0.35;
+      const v = Math.floor(n * 255);
+      const i = (y * size + x) * 4;
+      data[i] = data[i+1] = data[i+2] = v;
+      data[i+3] = 255;
+    }
   }
   ctx.putImageData(img, 0, 0);
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(4, 4);
+  tex.repeat.set(2, 3);
+  tex.anisotropy = 8;
   return tex;
 }
 
 /* ---------- Grain de café réaliste ---------- */
 function createBean(){
-  const geo = new THREE.SphereGeometry(1, 160, 160);
+  const geo = new THREE.SphereGeometry(1, 200, 200);
   const pos = geo.attributes.position;
   const v = new THREE.Vector3();
 
   for (let i = 0; i < pos.count; i++){
     v.fromBufferAttribute(pos, i);
 
-    // forme : ellipsoïde aplati
-    v.x *= 0.78;   // largeur
-    v.y *= 0.88;   // épaisseur
-    v.z *= 1.30;   // longueur
+    // Forme : ellipsoïde
+    v.x *= 0.75;
+    v.y *= 0.85;
+    v.z *= 1.32;
 
-    // CREUX central sur la face +X (la rainure du grain)
+    // Rainure centrale sur +X
     if (v.x > 0){
-      const creaseY = Math.exp(-Math.pow(v.y / 0.18, 2));
-      const creaseZ = Math.exp(-Math.pow(v.z / 1.05, 4));
-      v.x -= creaseY * creaseZ * 0.38;
+      const creaseY = Math.exp(-Math.pow(v.y / 0.16, 2));
+      const creaseZ = Math.exp(-Math.pow(v.z / 1.0, 4));
+      v.x -= creaseY * creaseZ * 0.45;
     }
 
-    // irrégularités organiques (bosse légère)
-    v.x += Math.sin(v.z * 5) * 0.014;
-    v.y += Math.cos(v.z * 6) * 0.012;
-    v.z += Math.sin(v.x * 4) * 0.01;
+    // Méplat sous le grain
+    v.x -= Math.exp(-Math.pow(v.x / 0.5, 2)) * 0.05 * Math.sign(v.x);
+
+    // Micro-reliefs
+    v.x += Math.sin(v.z * 8 + v.x * 3) * 0.02;
+    v.y += Math.cos(v.y * 7 + v.z * 2) * 0.018;
+    v.z += Math.sin(v.x * 12 + v.y * 5) * 0.012;
 
     pos.setXYZ(i, v.x, v.y, v.z);
   }
   geo.computeVertexNormals();
 
+  const bump = fbmTexture(512);
+
   const mat = new THREE.MeshPhysicalMaterial({
-    color: 0x8a5a2b,
-    roughness: 0.58,
-    metalness: 0.08,
-    clearcoat: 0.35,
-    clearcoatRoughness: 0.6,
-    bumpMap: noiseTexture(),
-    bumpScale: 0.04,
-    sheen: 0.25,
+    color: 0x7a4a24,
+    roughness: 0.62,
+    metalness: 0.05,
+    clearcoat: 0.5,
+    clearcoatRoughness: 0.55,
+    sheen: 0.35,
     sheenColor: new THREE.Color(0xC9A227),
+    sheenRoughness: 0.8,
+    bumpMap: bump,
+    bumpScale: 0.2,
   });
 
   return new THREE.Mesh(geo, mat);
@@ -143,7 +182,7 @@ const particles = new THREE.Points(pGeo, new THREE.PointsMaterial({
 }));
 scene.add(particles);
 
-/* ---------- NARRATION AU SCROLL ---------- */
+/* ---------- NARRATION AU SCROLL (zigzag) ---------- */
 const tl = gsap.timeline({
   scrollTrigger: {
     trigger: document.body,
@@ -154,27 +193,29 @@ const tl = gsap.timeline({
 });
 
 tl
-  // ==== Phase 1 : Hero → Origine (grain cru, tourne, va à droite) ====
-  .to(beanGroup.rotation, { y: Math.PI * 2, x: 0.25, ease: 'none', duration: 1 }, 0)
-  .to(beanGroup.position, { x: 1.7, y: 0.1, z: 0, ease: 'none', duration: 1 }, 0)
-  // couleur : cru (légèrement verdâtre) → doré
+  // Hero → Origine : grain descend à DROITE
+  .to(beanGroup.rotation, { y: Math.PI * 2, x: 0.4, ease: 'none' }, 0)
+  .to(beanGroup.position, { x: 2.2, y: -1.2, z: 0.5, ease: 'none' }, 0)
+  .to(beanGroup.scale, { x: 0.85, y: 0.85, z: 0.85, ease: 'none' }, 0)
 
-  // ==== Phase 2 : Origine → Voyage (torréfaction) ====
-  .to(beanGroup.rotation, { y: Math.PI * 4, x: -0.25, ease: 'none', duration: 1 }, 1)
-  .to(beanGroup.position, { x: -1.7, y: -0.1, z: 0.4, ease: 'none', duration: 1 }, 1)
-  .to(bean.material.color, { r: 0.42, g: 0.24, b: 0.12, ease: 'none', duration: 1 }, 1)
-  .to(bean.material, { roughness: 0.42, ease: 'none', duration: 1 }, 1)
+  // Origine → Voyage : remonte à GAUCHE + torréfaction
+  .to(beanGroup.rotation, { y: Math.PI * 4, x: -0.5, ease: 'none' }, 1)
+  .to(beanGroup.position, { x: -2.3, y: 1.4, z: 0.2, ease: 'none' }, 1)
+  .to(bean.material.color, { r: 0.45, g: 0.25, b: 0.12, ease: 'none' }, 1)
+  .to(bean.material, { roughness: 0.48, ease: 'none' }, 1)
+  .to(beanGroup.scale, { x: 1.0, y: 1.0, z: 1.0, ease: 'none' }, 1)
 
-  // ==== Phase 3 : Voyage → Produits (brun foncé, rétrécit) ====
-  .to(beanGroup.rotation, { y: Math.PI * 6, x: 0.1, ease: 'none', duration: 1 }, 2)
-  .to(beanGroup.position, { x: 1.5, y: 0, z: -0.8, ease: 'none', duration: 1 }, 2)
-  .to(beanGroup.scale, { x: 0.55, y: 0.55, z: 0.55, ease: 'none', duration: 1 }, 2)
-  .to(bean.material.color, { r: 0.28, g: 0.15, b: 0.08, ease: 'none', duration: 1 }, 2)
+  // Voyage → Produits : descend à DROITE + brun foncé
+  .to(beanGroup.rotation, { y: Math.PI * 6, x: 0.2, ease: 'none' }, 2)
+  .to(beanGroup.position, { x: 2.0, y: -1.8, z: -0.6, ease: 'none' }, 2)
+  .to(bean.material.color, { r: 0.28, g: 0.15, b: 0.08, ease: 'none' }, 2)
+  .to(beanGroup.scale, { x: 0.6, y: 0.6, z: 0.6, ease: 'none' }, 2)
 
-  // ==== Phase 4 : Produits → Footer (disparition en poussière) ====
-  .to(beanGroup.scale, { x: 0.001, y: 0.001, z: 0.001, ease: 'power2.in', duration: 1 }, 3)
-  .to(beanGroup.rotation, { y: Math.PI * 10, ease: 'none', duration: 1 }, 3)
-  .to(particles.material, { size: 0.02, opacity: 0.2, ease: 'none', duration: 1 }, 3);
+  // Produits → Footer : disparition en poussière
+  .to(beanGroup.scale, { x: 0.001, y: 0.001, z: 0.001, ease: 'power2.in' }, 3)
+  .to(beanGroup.rotation, { y: Math.PI * 10, ease: 'none' }, 3)
+  .to(beanGroup.position, { y: -3, x: 0, ease: 'power1.in' }, 3)
+  .to(particles.material, { size: 0.02, opacity: 0.15, ease: 'none' }, 3);
 
 /* ---------- Souris (parallaxe) ---------- */
 const mouse = { x: 0, y: 0 };
@@ -196,18 +237,14 @@ const clock = new THREE.Clock();
 function tick(){
   const t = clock.getElapsedTime();
 
-  // rotation continue auto
   beanGroup.rotation.y += 0.0025;
 
-  // particules tournent doucement + pulse
   particles.rotation.y = t * 0.05;
   particles.rotation.x = Math.sin(t * 0.3) * 0.05;
 
-  // lumière dorée orbite autour du grain
   gold.position.x = Math.cos(t * 0.6) * 3 + beanGroup.position.x;
   gold.position.z = Math.sin(t * 0.6) * 3;
 
-  // caméra parallaxe souris
   camera.position.x += (mouse.x * 0.35 - camera.position.x) * 0.05;
   camera.position.y += (mouse.y * 0.25 - camera.position.y) * 0.05;
   camera.lookAt(0, 0, 0);
