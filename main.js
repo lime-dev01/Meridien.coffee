@@ -71,7 +71,7 @@ const state = {
   globeVisible: false,
   morph: 0,
   flash: 0,
-  beanGone: false,   // ⬅️ NOUVEAU : grain définitivement parti
+  beanGone: false,
 };
 
 function fbmTexture(size = PERF.fbmSize){
@@ -367,40 +367,64 @@ const particles = new THREE.Points(pGeo, new THREE.PointsMaterial({
   size: 0.07, map: dotTex(), transparent: true, depthWrite: false,
   blending: THREE.AdditiveBlending, color: 0xC9A227,
 }));
-/* ============================================
-   SÉQUENCE FINALE — Nappe liquide + bulles
+scene.add(particles);/* ============================================
+   SÉQUENCE FINALE — Nappe liquide + bulles + impact
    ============================================ */
 
-/* --- Nappe liquide (couleurs café clair) --- */
+/* --- Nappe liquide avec physique réaliste --- */
 const liquidGeo = new THREE.PlaneGeometry(20, 10, 128, 64);
 const liquidMat = new THREE.ShaderMaterial({
   transparent: true,
   depthWrite: false,
   uniforms: {
-    uTime:    { value: 0 },
-    uProgress:{ value: 0 },
-    uColor1:  { value: new THREE.Color(0x8a5a38) },  // marron café clair
-    uColor2:  { value: new THREE.Color(0xb8825a) },  // caramel clair
-    uColor3:  { value: new THREE.Color(0xd4a878) },  // doré très doux
+    uTime:         { value: 0 },
+    uProgress:     { value: 0 },
+    uAgitation:    { value: 1.0 },    // ⬅️ décroît avec le temps (0.15 au repos)
+    uImpactTime:   { value: -1 },     // ⬅️ -1 = pas d'impact, sinon temps depuis impact
+    uColor1:       { value: new THREE.Color(0x8a5a38) },
+    uColor2:       { value: new THREE.Color(0xb8825a) },
+    uColor3:       { value: new THREE.Color(0xd4a878) },
   },
   vertexShader: `
     varying vec2 vUv;
+    varying float vWave;
     uniform float uTime;
+    uniform float uAgitation;
+
     void main(){
       vUv = uv;
       vec3 pos = position;
-      float wave = sin(pos.x * 0.8 + uTime * 1.2) * 0.08
-                 + cos(pos.x * 1.3 + uTime * 0.7) * 0.05
-                 + sin(pos.x * 2.1 + uTime * 1.8) * 0.03;
+
+      /* Vagues basse fréquence (houle) */
+      float wave1 = sin(pos.x * 0.8 + uTime * 1.2) * 0.10
+                  + cos(pos.x * 1.3 + uTime * 0.7) * 0.07;
+
+      /* Vagues haute fréquence (clapotis) */
+      float wave2 = sin(pos.x * 3.5 + uTime * 2.8) * 0.04
+                  + sin(pos.x * 5.2 - uTime * 3.4) * 0.025
+                  + cos(pos.z * 2.1 + uTime * 2.1) * 0.03;
+
+      /* Micro-respiration permanente */
+      float breath = sin(uTime * 0.4) * 0.015;
+
+      float wave = (wave1 + wave2 * uAgitation) * uAgitation + breath;
+
+      /* Atténuation aux bords */
       float edge = smoothstep(0.0, 0.15, uv.x) * smoothstep(1.0, 0.85, uv.x);
-      pos.z += wave * edge * 0.6;
+      pos.z += wave * edge;
+
+      vWave = wave;
+
       gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
     }
   `,
   fragmentShader: `
     varying vec2 vUv;
+    varying float vWave;
     uniform float uTime;
     uniform float uProgress;
+    uniform float uAgitation;
+    uniform float uImpactTime;
     uniform vec3 uColor1;
     uniform vec3 uColor2;
     uniform vec3 uColor3;
@@ -428,23 +452,42 @@ const liquidMat = new THREE.ShaderMaterial({
 
     void main(){
       vec2 uv = vUv;
-      float n1 = fbm(uv * 3.0 + vec2(uTime * 0.15, uTime * 0.1));
-      float n2 = fbm(uv * 6.0 + vec2(-uTime * 0.2, uTime * 0.08));
-      uv.x += (n1 - 0.5) * 0.08;
-      uv.y += (n2 - 0.5) * 0.05;
 
-      float blend = fbm(uv * 2.0 + uTime * 0.05);
+      /* Reflets mouvants : 2 bruits à vitesses différentes */
+      float n1 = fbm(uv * 3.0 + vec2(uTime * 0.15, uTime * 0.10));
+      float n2 = fbm(uv * 6.0 + vec2(-uTime * 0.20, uTime * 0.08));
+
+      /* Distorsion des UV pour un effet organique */
+      vec2 distUv = uv + vec2((n1 - 0.5) * 0.08, (n2 - 0.5) * 0.05);
+
+      /* Couleur de base */
+      float blend = fbm(distUv * 2.0 + uTime * 0.05);
       vec3 col = mix(uColor1, uColor2, blend);
 
-      /* Légère écume dorée, uniquement sur les crêtes */
-      float highlight = smoothstep(0.8, 0.98, blend);
-      col = mix(col, uColor3, highlight * 0.35);
+      /* Ondulation circulaire au point d'impact */
+      if (uImpactTime >= 0.0) {
+        float t = uImpactTime;
+        vec2 center = vec2(0.5, 0.5);
+        float d = distance(uv, center);
+        /* L'onde s'éloigne du centre */
+        float waveR = t * 1.2;
+        float ring = exp(-pow((d - waveR) * 12.0, 2.0));
+        /* S'affaiblit avec le temps */
+        float strength = exp(-t * 1.5);
+        col += uColor3 * ring * strength * 0.6;
+      }
 
-      /* Liseré de surface très discret */
-      float surface = smoothstep(0.92, 1.0, vUv.y);
-      col = mix(col, uColor3, surface * 0.25);
+      /* Reflets mouvants sur les crêtes (surface mouillée) */
+      float crest = smoothstep(0.05, 0.20, abs(vWave));
+      col += uColor3 * crest * n1 * 0.35;
 
-      float edgeFade = smoothstep(0.0, 0.15, uv.x) * smoothstep(1.0, 0.85, uv.x);
+      /* Écume dorée légère sur les hauts du bruit */
+      float highlight = smoothstep(0.85, 0.98, blend);
+      col = mix(col, uColor3, highlight * 0.30);
+
+      /* Fondu gauche/droite court (évite le "dégradé diagonal") */
+      float edgeFade = smoothstep(0.0, 0.08, uv.x) * smoothstep(1.0, 0.92, uv.x);
+
       float alpha = edgeFade * uProgress;
 
       gl_FragColor = vec4(col, alpha);
@@ -454,7 +497,7 @@ const liquidMat = new THREE.ShaderMaterial({
 const liquid = new THREE.Mesh(liquidGeo, liquidMat);
 liquid.position.set(0, -8, 0);
 liquid.rotation.x = -Math.PI / 2.2;
-liquid.visible = false;   // ⬅️ caché au départ
+liquid.visible = false;
 scene.add(liquid);
 
 /* --- Bulles --- */
@@ -468,7 +511,7 @@ const bubbleMat = new THREE.MeshBasicMaterial({
   blending: THREE.AdditiveBlending,
 });
 const bubbles = new THREE.InstancedMesh(bubbleGeo, bubbleMat, bubbleCount);
-bubbles.visible = false;   // ⬅️ caché au départ
+bubbles.visible = false;
 bubbles.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 scene.add(bubbles);
 
@@ -489,21 +532,52 @@ for (let i = 0; i < bubbleCount; i++){
   });
 }
 
-/* --- Flash final (invisible au repos, apparaît uniquement à l'impact) --- */
-const finalFlashMat = new THREE.SpriteMaterial({
-  map: radialTex(),
-  color: 0xffffff,          // ⬅️ blanc pur (plus visible comme boule blanche)
+/* --- Impact : disque plat qui s'étend + gouttelettes --- */
+
+/* Disque plat horizontal (onde de choc liquide) */
+const impactDiscGeo = new THREE.CircleGeometry(1, 64);
+impactDiscGeo.rotateX(-Math.PI / 2);   // à plat
+const impactDiscMat = new THREE.MeshBasicMaterial({
+  color: 0xd4a878,
   transparent: true,
   opacity: 0,
   blending: THREE.AdditiveBlending,
   depthWrite: false,
   depthTest: false,
+  side: THREE.DoubleSide,
 });
-const finalFlash = new THREE.Sprite(finalFlashMat);
-finalFlash.scale.set(3, 3, 1);
-finalFlash.position.set(0, -20, 0);   // ⬅️ TRÈS bas, hors champ au repos
-finalFlash.visible = false;            // ⬅️ caché au départ
-scene.add(finalFlash);
+const impactDisc = new THREE.Mesh(impactDiscGeo, impactDiscMat);
+impactDisc.position.set(0, -3, 0);
+impactDisc.visible = false;
+scene.add(impactDisc);
+
+/* Gouttelettes : InstancedMesh de petites sphères qui jaillissent */
+const dropletCount = isMobile ? 12 : 24;
+const dropletGeo = new THREE.SphereGeometry(1, 6, 6);
+const dropletMat = new THREE.MeshBasicMaterial({
+  color: 0xd4a878,
+  transparent: true,
+  opacity: 0,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending,
+});
+const droplets = new THREE.InstancedMesh(dropletGeo, dropletMat, dropletCount);
+droplets.visible = false;
+droplets.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+scene.add(droplets);
+
+const dropletData = [];
+for (let i = 0; i < dropletCount; i++){
+  const angle = (i / dropletCount) * Math.PI * 2 + Math.random() * 0.5;
+  const speed = 1.5 + Math.random() * 1.5;
+  dropletData.push({
+    vx: Math.cos(angle) * speed,
+    vy: 2.5 + Math.random() * 2,
+    vz: Math.sin(angle) * speed * 0.4,
+    size: 0.03 + Math.random() * 0.04,
+    startY: -3,
+  });
+}
 
 /* ============================================
    TIMELINE
@@ -573,7 +647,7 @@ tl
   .to(camera, { fov: 50, ease: 'power2.inOut', duration: 0.6, onUpdate: () => camera.updateProjectionMatrix() }, 4.1)
   .to(lookAtTarget, { x: 0.5, y: -0.4, ease: 'power2.inOut', duration: 0.6 }, 4.1)
 
-  /* PHASE 5 — Grain flotte, puis se prépare à tomber */
+  /* PHASE 5 — Grain flotte */
   .to(beanGroup.rotation, { y: Math.PI * 9, ease: 'none', duration: 0.6 }, 4.7)
   .to(beanGroup.position, { x: 1.6, y: -1.2, z: -0.3, ease: 'power1.inOut', duration: 0.6 }, 4.7)
   .to(particles.material, { size: 0.04, opacity: 0.5, ease: 'none', duration: 0.6 }, 4.7)
@@ -582,25 +656,39 @@ tl
   .to(lookAtTarget, { x: 0.2, y: -0.3, ease: 'power2.inOut', duration: 0.6 }, 4.7)
 
   /* ==========================================
-     PHASE 6 — LE GRAIN TOMBE
+     PHASE 6 — CHUTE DU GRAIN
      ========================================== */
   .to(beanGroup.position, { y: -14, ease: 'power2.in', duration: 0.7 }, 5.3)
   .to(beanGroup.rotation, { x: 4, y: Math.PI * 12, ease: 'power1.in', duration: 0.7 }, 5.3)
-  /* Le grain disparaît définitivement après sa chute */
   .set(state, { beanGone: true }, 6.0)
   .set(state, { beanOpacity: 0 }, 6.0)
   .set(beanGroup, { visible: false }, 6.0)
 
   /* ==========================================
-     PHASE 7 — MONTÉE DU LIQUIDE
+     PHASE 7 — IMPACT LIQUIDE + MONTÉE
      ========================================== */
 
-  /* Flash d'impact — apparaît et disparaît vite */
-  .set(finalFlash, { visible: true }, 6.0)
-  .set(finalFlash.position, { y: -3, x: 0, z: 0 }, 6.0)
-  .to(finalFlashMat, { opacity: 0.85, ease: 'power2.out', duration: 0.08 }, 6.0)
-  .to(finalFlashMat, { opacity: 0, ease: 'power2.in', duration: 0.5 }, 6.08)
-  .set(finalFlash, { visible: false }, 6.6)
+  /* Impact : disque qui s'étend */
+  .set(impactDisc, { visible: true }, 6.0)
+  .set(impactDisc.scale, { x: 0.01, y: 0.01, z: 0.01 }, 6.0)
+  .to(impactDiscMat, { opacity: 0.8, ease: 'power2.out', duration: 0.05 }, 6.0)
+  .to(impactDisc.scale, { x: 4, y: 1, z: 4, ease: 'power3.out', duration: 0.7 }, 6.0)
+  .to(impactDiscMat, { opacity: 0, ease: 'power2.in', duration: 0.5 }, 6.3)
+  .set(impactDisc, { visible: false }, 6.9)
+
+  /* Impact : gouttelettes qui jaillissent */
+  .set(droplets, { visible: true }, 6.0)
+  .to(dropletMat, { opacity: 0.9, ease: 'power2.out', duration: 0.05 }, 6.0)
+  .to(dropletMat, { opacity: 0, ease: 'power2.in', duration: 0.8 }, 6.4)
+  .set(droplets, { visible: false }, 7.2)
+
+  /* Impact : ondulation circulaire dans le shader */
+  .set(liquidMat.uniforms.uImpactTime, { value: 0 }, 6.0)
+  .to(liquidMat.uniforms.uImpactTime, { value: 2.5, ease: 'power1.out', duration: 1.5 }, 6.0)
+
+  /* Agitation : forte au début, décroît */
+  .set(liquidMat.uniforms.uAgitation, { value: 1.0 }, 6.0)
+  .to(liquidMat.uniforms.uAgitation, { value: 0.15, ease: 'power2.out', duration: 3 }, 6.0)
 
   /* Liquide apparaît */
   .set(liquid, { visible: true }, 6.0)
@@ -611,7 +699,7 @@ tl
   .set(bubbles, { visible: true }, 6.2)
   .to(bubbleMat, { opacity: 0.55, ease: 'power2.out', duration: 1 }, 6.2)
 
-  /* Caméra recule pour révéler la scène */
+  /* Caméra recule */
   .to(cameraBase, { z: 8.5, x: 0, y: 0.3, ease: 'power2.inOut', duration: 1.5 }, 6.0)
   .to(camera, { fov: 55, ease: 'power2.inOut', duration: 1.5, onUpdate: () => camera.updateProjectionMatrix() }, 6.0)
   .to(lookAtTarget, { x: 0, y: -1.2, ease: 'power2.inOut', duration: 1.5 }, 6.0);
@@ -625,6 +713,8 @@ const pointerNDC = new THREE.Vector2();
 let isDragging = false;
 let hasMoved = false;
 let prevPointer = { x: 0, y: 0 };
+let impactStartTime = -1;   // temps où l'impact a commencé (pour gouttelettes)
+let dropletActive = false;
 
 const dotMeshes = markers.map(m => m.dot);
 
@@ -716,6 +806,9 @@ addEventListener('resize', () => {
    ============================================ */
 const clock = new THREE.Clock();
 
+/* Pour les gouttelettes : on garde le temps local depuis le début de l'impact */
+let dropletLocalTime = 0;
+
 function tick(){
   const t = clock.getElapsedTime();
 
@@ -740,7 +833,7 @@ function tick(){
 
   flashMat.opacity = state.flash;
 
-  /* ===== Grain — ne tourne plus s'il est "gone" ===== */
+  /* ===== Grain ===== */
   if (!state.beanGone) {
     if (!isDragging || !state.globeVisible) {
       beanGroup.rotation.y += 0.0025;
@@ -751,7 +844,6 @@ function tick(){
       beanMat.needsUpdate = true;
     }
   } else {
-    /* Grain définitivement caché */
     beanGroup.visible = false;
   }
 
@@ -777,6 +869,33 @@ function tick(){
 
   /* ===== Nappe liquide : temps ===== */
   liquidMat.uniforms.uTime.value = t;
+
+  /* ===== Gouttelettes : animation pendant l'impact ===== */
+  if (droplets.visible) {
+    /* On détecte le début de l'impact en surveillant la valeur de uImpactTime */
+    const impactT = liquidMat.uniforms.uImpactTime.value;
+    if (impactT >= 0) {
+      dropletLocalTime += 0.016;
+
+      for (let i = 0; i < dropletCount; i++){
+        const d = dropletData[i];
+        /* Physique simple : x = vx * t, y = startY + vy*t - 0.5*g*t² */
+        const px = d.vx * dropletLocalTime;
+        const py = d.startY + d.vy * dropletLocalTime - 4.5 * dropletLocalTime * dropletLocalTime;
+        const pz = d.vz * dropletLocalTime;
+
+        dummyPos.set(px, py, pz);
+        const scale = Math.max(0.01, 1 - dropletLocalTime * 0.6);
+        dummyScale.setScalar(d.size * scale);
+        dummyQuat.set(0, 0, 0, 1);
+        dummyMat.compose(dummyPos, dummyQuat, dummyScale);
+        droplets.setMatrixAt(i, dummyMat);
+      }
+      droplets.instanceMatrix.needsUpdate = true;
+    }
+  } else {
+    dropletLocalTime = 0;
+  }
 
   /* ===== Bulles ===== */
   if (bubbles.visible) {
@@ -805,7 +924,7 @@ function tick(){
     bubbles.instanceMatrix.needsUpdate = true;
   }
 
-  /* ===== Lumière dorée (uniquement si le grain existe) ===== */
+  /* ===== Lumière dorée ===== */
   if (!state.beanGone) {
     gold.position.x = Math.cos(t * 0.6) * 3 + beanGroup.position.x;
     gold.position.z = Math.sin(t * 0.6) * 3;
@@ -828,4 +947,3 @@ function tick(){
 tick();
 
 console.log('%cMéridien', 'font-family: serif; font-size: 20px; color: #C9A227;');
-scene.add(particles);
