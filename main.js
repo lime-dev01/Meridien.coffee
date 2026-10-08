@@ -367,6 +367,153 @@ const particles = new THREE.Points(pGeo, new THREE.PointsMaterial({
   blending: THREE.AdditiveBlending, color: 0xC9A227,
 }));
 scene.add(particles);
+/* ============================================
+   SÉQUENCE FINALE — Nappe liquide + bulles
+   ============================================ */
+
+/* --- Nappe liquide (plan qui monte du bas) --- */
+const liquidGeo = new THREE.PlaneGeometry(20, 10, 128, 64);
+const liquidMat = new THREE.ShaderMaterial({
+  transparent: true,
+  depthWrite: false,
+  uniforms: {
+    uTime:    { value: 0 },
+    uProgress:{ value: 0 },   // 0 = pas visible, 1 = montée complète
+    uColor1:  { value: new THREE.Color(0x2a1208) },  // café foncé
+    uColor2:  { value: new THREE.Color(0x8B5E3C) },  // brun torréfié
+    uColor3:  { value: new THREE.Color(0xC9A227) },  // doré (écume)
+  },
+  vertexShader: `
+    varying vec2 vUv;
+    uniform float uTime;
+    uniform float uProgress;
+    void main(){
+      vUv = uv;
+      vec3 pos = position;
+
+      // Ondulations légères de la surface (vagues)
+      float wave = sin(pos.x * 0.8 + uTime * 1.2) * 0.08
+                 + cos(pos.x * 1.3 + uTime * 0.7) * 0.05
+                 + sin(pos.x * 2.1 + uTime * 1.8) * 0.03;
+
+      // Amplitude atténuée aux bords pour éviter les pointes
+      float edge = smoothstep(0.0, 0.15, uv.x) * smoothstep(1.0, 0.85, uv.x);
+      pos.z += wave * edge * 0.6;
+
+      // Le plan monte selon uProgress (position Y animée par GSAP)
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+    }
+  `,
+  fragmentShader: `
+    varying vec2 vUv;
+    uniform float uTime;
+    uniform float uProgress;
+    uniform vec3 uColor1;
+    uniform vec3 uColor2;
+    uniform vec3 uColor3;
+
+    // Bruit pseudo-aléatoire
+    float hash(vec2 p){
+      return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+    }
+    float noise(vec2 p){
+      vec2 i = floor(p);
+      vec2 f = fract(p);
+      vec2 u = f*f*(3.0-2.0*f);
+      return mix(mix(hash(i), hash(i+vec2(1.0,0.0)), u.x),
+                 mix(hash(i+vec2(0.0,1.0)), hash(i+vec2(1.0,1.0)), u.x), u.y);
+    }
+    float fbm(vec2 p){
+      float v = 0.0;
+      float a = 0.5;
+      for(int i = 0; i < 5; i++){
+        v += a * noise(p);
+        p *= 2.0;
+        a *= 0.5;
+      }
+      return v;
+    }
+
+    void main(){
+      // Distorsion organique des UV par du bruit
+      vec2 uv = vUv;
+      float n1 = fbm(uv * 3.0 + vec2(uTime * 0.15, uTime * 0.1));
+      float n2 = fbm(uv * 6.0 + vec2(-uTime * 0.2, uTime * 0.08));
+      uv.x += (n1 - 0.5) * 0.08;
+      uv.y += (n2 - 0.5) * 0.05;
+
+      // Mélange de couleurs en fonction du bruit
+      float blend = fbm(uv * 2.0 + uTime * 0.05);
+      vec3 col = mix(uColor1, uColor2, blend);
+
+      // Écume dorée sur les "hauts" du bruit
+      float highlight = smoothstep(0.7, 0.95, blend);
+      col = mix(col, uColor3, highlight * 0.6);
+
+      // Liseré doré en haut de la nappe (surface qui accroche la lumière)
+      float surface = smoothstep(0.85, 1.0, vUv.y);
+      col = mix(col, uColor3, surface * 0.4);
+
+      // Fondu aux bords gauche/droit et sur le bord supérieur
+      float edgeFade = smoothstep(0.0, 0.15, uv.x) * smoothstep(1.0, 0.85, uv.x);
+      float alpha = edgeFade * uProgress;
+
+      gl_FragColor = vec4(col, alpha);
+    }
+  `,
+});
+const liquid = new THREE.Mesh(liquidGeo, liquidMat);
+liquid.position.set(0, -8, 0);   // commence très bas (invisible)
+liquid.rotation.x = -Math.PI / 2.2;   // vue en perspective (légèrement incliné)
+scene.add(liquid);
+
+/* --- Bulles qui montent dans le liquide --- */
+const bubbleCount = isMobile ? 40 : 90;
+const bubbleGeo = new THREE.SphereGeometry(1, 8, 8);
+const bubbleMat = new THREE.MeshBasicMaterial({
+  color: 0xC9A227,
+  transparent: true,
+  opacity: 0.7,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending,
+});
+const bubbles = new THREE.InstancedMesh(bubbleGeo, bubbleMat, bubbleCount);
+bubbles.userData.baseOpacity = 0.7;
+bubbles.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+scene.add(bubbles);
+
+/* Données des bulles */
+const bubbleData = [];
+const dummyMat = new THREE.Matrix4();
+const dummyScale = new THREE.Vector3();
+const dummyPos = new THREE.Vector3();
+const dummyQuat = new THREE.Quaternion();
+
+for (let i = 0; i < bubbleCount; i++){
+  bubbleData.push({
+    x: (Math.random() - 0.5) * 8,
+    y: -8 + Math.random() * 8,
+    z: (Math.random() - 0.5) * 4 - 1,
+    speed: 0.3 + Math.random() * 0.6,
+    size: 0.02 + Math.random() * 0.06,
+    phase: Math.random() * Math.PI * 2,
+  });
+}
+
+/* --- Flash final (impact du grain) --- */
+const finalFlashMat = new THREE.SpriteMaterial({
+  map: radialTex(),
+  color: 0xFFE5B0,
+  transparent: true,
+  opacity: 0,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  depthTest: false,
+});
+const finalFlash = new THREE.Sprite(finalFlashMat);
+finalFlash.scale.set(5, 5, 1);
+finalFlash.position.set(0, -3, 0);
+scene.add(finalFlash);
 
 const tl = gsap.timeline({
   scrollTrigger: {
