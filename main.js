@@ -4,7 +4,7 @@
 
 import * as THREE from 'three';
 
-const isMobile = window.matchMedia('(max-wfidth: 768px)').matches
+const isMobile = window.matchMedia('(max-width: 768px)').matches
               || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
 const PERF = {
@@ -71,6 +71,7 @@ const state = {
   globeVisible: false,
   morph: 0,
   flash: 0,
+  beanGone: false,   // ⬅️ NOUVEAU : grain définitivement parti
 };
 
 function fbmTexture(size = PERF.fbmSize){
@@ -366,41 +367,33 @@ const particles = new THREE.Points(pGeo, new THREE.PointsMaterial({
   size: 0.07, map: dotTex(), transparent: true, depthWrite: false,
   blending: THREE.AdditiveBlending, color: 0xC9A227,
 }));
-scene.add(particles);
 /* ============================================
    SÉQUENCE FINALE — Nappe liquide + bulles
    ============================================ */
 
-/* --- Nappe liquide (plan qui monte du bas) --- */
+/* --- Nappe liquide (couleurs café clair) --- */
 const liquidGeo = new THREE.PlaneGeometry(20, 10, 128, 64);
 const liquidMat = new THREE.ShaderMaterial({
   transparent: true,
   depthWrite: false,
   uniforms: {
     uTime:    { value: 0 },
-    uProgress:{ value: 0 },   // 0 = pas visible, 1 = montée complète
-    uColor1:  { value: new THREE.Color(0x2a1208) },  // café foncé
-    uColor2:  { value: new THREE.Color(0x8B5E3C) },  // brun torréfié
-    uColor3:  { value: new THREE.Color(0xC9A227) },  // doré (écume)
+    uProgress:{ value: 0 },
+    uColor1:  { value: new THREE.Color(0x8a5a38) },  // marron café clair
+    uColor2:  { value: new THREE.Color(0xb8825a) },  // caramel clair
+    uColor3:  { value: new THREE.Color(0xd4a878) },  // doré très doux
   },
   vertexShader: `
     varying vec2 vUv;
     uniform float uTime;
-    uniform float uProgress;
     void main(){
       vUv = uv;
       vec3 pos = position;
-
-      // Ondulations légères de la surface (vagues)
       float wave = sin(pos.x * 0.8 + uTime * 1.2) * 0.08
                  + cos(pos.x * 1.3 + uTime * 0.7) * 0.05
                  + sin(pos.x * 2.1 + uTime * 1.8) * 0.03;
-
-      // Amplitude atténuée aux bords pour éviter les pointes
       float edge = smoothstep(0.0, 0.15, uv.x) * smoothstep(1.0, 0.85, uv.x);
       pos.z += wave * edge * 0.6;
-
-      // Le plan monte selon uProgress (position Y animée par GSAP)
       gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
     }
   `,
@@ -412,7 +405,6 @@ const liquidMat = new THREE.ShaderMaterial({
     uniform vec3 uColor2;
     uniform vec3 uColor3;
 
-    // Bruit pseudo-aléatoire
     float hash(vec2 p){
       return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
     }
@@ -435,26 +427,23 @@ const liquidMat = new THREE.ShaderMaterial({
     }
 
     void main(){
-      // Distorsion organique des UV par du bruit
       vec2 uv = vUv;
       float n1 = fbm(uv * 3.0 + vec2(uTime * 0.15, uTime * 0.1));
       float n2 = fbm(uv * 6.0 + vec2(-uTime * 0.2, uTime * 0.08));
       uv.x += (n1 - 0.5) * 0.08;
       uv.y += (n2 - 0.5) * 0.05;
 
-      // Mélange de couleurs en fonction du bruit
       float blend = fbm(uv * 2.0 + uTime * 0.05);
       vec3 col = mix(uColor1, uColor2, blend);
 
-      // Écume dorée sur les "hauts" du bruit
-      float highlight = smoothstep(0.7, 0.95, blend);
-      col = mix(col, uColor3, highlight * 0.6);
+      /* Légère écume dorée, uniquement sur les crêtes */
+      float highlight = smoothstep(0.8, 0.98, blend);
+      col = mix(col, uColor3, highlight * 0.35);
 
-      // Liseré doré en haut de la nappe (surface qui accroche la lumière)
-      float surface = smoothstep(0.85, 1.0, vUv.y);
-      col = mix(col, uColor3, surface * 0.4);
+      /* Liseré de surface très discret */
+      float surface = smoothstep(0.92, 1.0, vUv.y);
+      col = mix(col, uColor3, surface * 0.25);
 
-      // Fondu aux bords gauche/droit et sur le bord supérieur
       float edgeFade = smoothstep(0.0, 0.15, uv.x) * smoothstep(1.0, 0.85, uv.x);
       float alpha = edgeFade * uProgress;
 
@@ -463,26 +452,26 @@ const liquidMat = new THREE.ShaderMaterial({
   `,
 });
 const liquid = new THREE.Mesh(liquidGeo, liquidMat);
-liquid.position.set(0, -8, 0);   // commence très bas (invisible)
-liquid.rotation.x = -Math.PI / 2.2;   // vue en perspective (légèrement incliné)
+liquid.position.set(0, -8, 0);
+liquid.rotation.x = -Math.PI / 2.2;
+liquid.visible = false;   // ⬅️ caché au départ
 scene.add(liquid);
 
-/* --- Bulles qui montent dans le liquide --- */
+/* --- Bulles --- */
 const bubbleCount = isMobile ? 40 : 90;
 const bubbleGeo = new THREE.SphereGeometry(1, 8, 8);
 const bubbleMat = new THREE.MeshBasicMaterial({
   color: 0xC9A227,
   transparent: true,
-  opacity: 0.7,
+  opacity: 0,
   depthWrite: false,
   blending: THREE.AdditiveBlending,
 });
 const bubbles = new THREE.InstancedMesh(bubbleGeo, bubbleMat, bubbleCount);
-bubbles.userData.baseOpacity = 0.7;
+bubbles.visible = false;   // ⬅️ caché au départ
 bubbles.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 scene.add(bubbles);
 
-/* Données des bulles */
 const bubbleData = [];
 const dummyMat = new THREE.Matrix4();
 const dummyScale = new THREE.Vector3();
@@ -500,10 +489,10 @@ for (let i = 0; i < bubbleCount; i++){
   });
 }
 
-/* --- Flash final (impact du grain) --- */
+/* --- Flash final (invisible au repos, apparaît uniquement à l'impact) --- */
 const finalFlashMat = new THREE.SpriteMaterial({
   map: radialTex(),
-  color: 0xFFE5B0,
+  color: 0xffffff,          // ⬅️ blanc pur (plus visible comme boule blanche)
   transparent: true,
   opacity: 0,
   blending: THREE.AdditiveBlending,
@@ -511,10 +500,14 @@ const finalFlashMat = new THREE.SpriteMaterial({
   depthTest: false,
 });
 const finalFlash = new THREE.Sprite(finalFlashMat);
-finalFlash.scale.set(5, 5, 1);
-finalFlash.position.set(0, -3, 0);
+finalFlash.scale.set(3, 3, 1);
+finalFlash.position.set(0, -20, 0);   // ⬅️ TRÈS bas, hors champ au repos
+finalFlash.visible = false;            // ⬅️ caché au départ
 scene.add(finalFlash);
 
+/* ============================================
+   TIMELINE
+   ============================================ */
 const tl = gsap.timeline({
   scrollTrigger: {
     trigger: document.body,
@@ -525,6 +518,7 @@ const tl = gsap.timeline({
 });
 
 tl
+  /* PHASE 1 */
   .to(beanGroup.rotation, { y: Math.PI * 2, x: 0.4, ease: 'none', duration: 1 }, 0)
   .to(beanGroup.position, { x: START.beanX + 0.6, y: -1.3, z: 0.5, ease: 'none', duration: 1 }, 0)
   .to(beanGroup.scale, { x: 0.85, y: 0.85, z: 0.85, ease: 'none', duration: 1 }, 0)
@@ -532,6 +526,7 @@ tl
   .to(camera, { fov: START.fov - 3, ease: 'power2.inOut', duration: 1, onUpdate: () => camera.updateProjectionMatrix() }, 0)
   .to(lookAtTarget, { x: 0.4, y: -0.3, ease: 'power2.inOut', duration: 1 }, 0)
 
+  /* PHASE 2 — Morphing */
   .to(beanGroup.rotation, { y: Math.PI * 5, x: 0.6, ease: 'power2.in', duration: 0.5 }, 1.2)
   .to(beanGroup.position, { x: 0.3, y: 0, z: 0, ease: 'power2.inOut', duration: 0.5 }, 1.2)
   .to(beanGroup.scale, { x: 1, y: 1, z: 1, ease: 'power2.inOut', duration: 0.5 }, 1.2)
@@ -554,11 +549,13 @@ tl
     { opacity: 0.6, ease: 'power2.out', duration: 0.08 }, 2.1)
   .to(ringMat, { opacity: 0, ease: 'power2.in', duration: 0.4 }, 2.18)
 
+  /* PHASE 3 — Globe */
   .to(globeGroup.rotation, { y: Math.PI * 0.9, ease: 'none', duration: 1 }, 2.5)
   .to(cameraBase, { z: 4.4, x: 0.5, y: -0.1, ease: 'power1.inOut', duration: 1 }, 2.5)
   .to(camera, { fov: 40, ease: 'power1.inOut', duration: 1, onUpdate: () => camera.updateProjectionMatrix() }, 2.5)
   .to(lookAtTarget, { x: 0.3, y: 0, ease: 'power1.inOut', duration: 1 }, 2.5)
 
+  /* PHASE 4 — Retour grain */
   .to(state, { flash: 0.6, ease: 'power2.out', duration: 0.1 }, 3.65)
   .to(state, { flash: 0, ease: 'power2.in', duration: 0.3 }, 3.75)
 
@@ -576,36 +573,52 @@ tl
   .to(camera, { fov: 50, ease: 'power2.inOut', duration: 0.6, onUpdate: () => camera.updateProjectionMatrix() }, 4.1)
   .to(lookAtTarget, { x: 0.5, y: -0.4, ease: 'power2.inOut', duration: 0.6 }, 4.1)
 
-  .to(beanGroup.rotation, { y: Math.PI * 9, ease: 'none', duration: 1 }, 4.7)
-  .to(beanGroup.position, { x: 1.6, y: -1.2, z: -0.3, ease: 'power1.inOut', duration: 1 }, 4.7)
-  .to(state, { beanOpacity: 0.35, ease: 'power2.out', duration: 1 }, 4.7)
-  .to(particles.material, { size: 0.04, opacity: 0.5, ease: 'none', duration: 1 }, 4.7)
-  .to(cameraBase, { z: 7, x: 0.3, y: -0.2, ease: 'power2.inOut', duration: 1 }, 4.7)
-  .to(camera, { fov: 52, ease: 'power2.inOut', duration: 1, onUpdate: () => camera.updateProjectionMatrix() }, 4.7)
-  .to(lookAtTarget, { x: 0.2, y: -0.3, ease: 'power2.inOut', duration: 1 }, 4.7)
+  /* PHASE 5 — Grain flotte, puis se prépare à tomber */
+  .to(beanGroup.rotation, { y: Math.PI * 9, ease: 'none', duration: 0.6 }, 4.7)
+  .to(beanGroup.position, { x: 1.6, y: -1.2, z: -0.3, ease: 'power1.inOut', duration: 0.6 }, 4.7)
+  .to(particles.material, { size: 0.04, opacity: 0.5, ease: 'none', duration: 0.6 }, 4.7)
+  .to(cameraBase, { z: 7, x: 0.3, y: -0.2, ease: 'power2.inOut', duration: 0.6 }, 4.7)
+  .to(camera, { fov: 52, ease: 'power2.inOut', duration: 0.6, onUpdate: () => camera.updateProjectionMatrix() }, 4.7)
+  .to(lookAtTarget, { x: 0.2, y: -0.3, ease: 'power2.inOut', duration: 0.6 }, 4.7)
 
   /* ==========================================
-     PHASE 6 — LE GRAIN TOMBE DANS LE VIDE
+     PHASE 6 — LE GRAIN TOMBE
      ========================================== */
-  .to(state, { beanOpacity: 0, ease: 'none', duration: 0.02 }, 5.0)
-  .to(beanGroup.position, { y: -12, ease: 'power2.in', duration: 0.6 }, 4.95)
-  .to(beanGroup.rotation, { x: 4, y: Math.PI * 12, ease: 'power1.in', duration: 0.6 }, 4.95)
+  .to(beanGroup.position, { y: -14, ease: 'power2.in', duration: 0.7 }, 5.3)
+  .to(beanGroup.rotation, { x: 4, y: Math.PI * 12, ease: 'power1.in', duration: 0.7 }, 5.3)
+  /* Le grain disparaît définitivement après sa chute */
+  .set(state, { beanGone: true }, 6.0)
+  .set(state, { beanOpacity: 0 }, 6.0)
+  .set(beanGroup, { visible: false }, 6.0)
 
   /* ==========================================
      PHASE 7 — MONTÉE DU LIQUIDE
      ========================================== */
-  .to(finalFlashMat, { opacity: 0.9, ease: 'power2.out', duration: 0.1 }, 5.6)
-  .to(finalFlashMat, { opacity: 0, ease: 'power2.in', duration: 0.4 }, 5.7)
 
-  .to(liquidMat.uniforms.uProgress, { value: 1, ease: 'power2.out', duration: 1.2 }, 5.5)
-  .to(liquid.position, { y: -2.5, ease: 'power2.out', duration: 1.2 }, 5.5)
+  /* Flash d'impact — apparaît et disparaît vite */
+  .set(finalFlash, { visible: true }, 6.0)
+  .set(finalFlash.position, { y: -3, x: 0, z: 0 }, 6.0)
+  .to(finalFlashMat, { opacity: 0.85, ease: 'power2.out', duration: 0.08 }, 6.0)
+  .to(finalFlashMat, { opacity: 0, ease: 'power2.in', duration: 0.5 }, 6.08)
+  .set(finalFlash, { visible: false }, 6.6)
 
-  .to(bubbleMat, { opacity: 0.7, ease: 'power2.out', duration: 1 }, 5.7)
+  /* Liquide apparaît */
+  .set(liquid, { visible: true }, 6.0)
+  .to(liquidMat.uniforms.uProgress, { value: 1, ease: 'power2.out', duration: 1.5 }, 6.0)
+  .to(liquid.position, { y: -3.2, ease: 'power2.out', duration: 1.5 }, 6.0)
 
-  .to(cameraBase, { z: 8, x: 0, y: 0.3, ease: 'power2.inOut', duration: 1.2 }, 5.5)
-  .to(camera, { fov: 55, ease: 'power2.inOut', duration: 1.2, onUpdate: () => camera.updateProjectionMatrix() }, 5.5)
-  .to(lookAtTarget, { x: 0, y: -1, ease: 'power2.inOut', duration: 1.2 }, 5.5);
+  /* Bulles apparaissent */
+  .set(bubbles, { visible: true }, 6.2)
+  .to(bubbleMat, { opacity: 0.55, ease: 'power2.out', duration: 1 }, 6.2)
 
+  /* Caméra recule pour révéler la scène */
+  .to(cameraBase, { z: 8.5, x: 0, y: 0.3, ease: 'power2.inOut', duration: 1.5 }, 6.0)
+  .to(camera, { fov: 55, ease: 'power2.inOut', duration: 1.5, onUpdate: () => camera.updateProjectionMatrix() }, 6.0)
+  .to(lookAtTarget, { x: 0, y: -1.2, ease: 'power2.inOut', duration: 1.5 }, 6.0);
+
+/* ============================================
+   INTERACTIONS
+   ============================================ */
 const raycaster = new THREE.Raycaster();
 const pointerNDC = new THREE.Vector2();
 
@@ -698,11 +711,15 @@ addEventListener('resize', () => {
   renderer.setSize(sizes.w, sizes.h);
 });
 
+/* ============================================
+   LOOP
+   ============================================ */
 const clock = new THREE.Clock();
 
 function tick(){
   const t = clock.getElapsedTime();
 
+  /* ===== MORPHING ===== */
   const isMorphing = state.morph > 0.002 && state.morph < 0.998;
   if (isMorphing) {
     const arr = beanGeo.attributes.position.array;
@@ -723,15 +740,22 @@ function tick(){
 
   flashMat.opacity = state.flash;
 
-  if (!isDragging || !state.globeVisible) {
-    beanGroup.rotation.y += 0.0025;
-  }
-  beanMat.opacity = state.beanOpacity;
-  if (beanMat.transparent !== (state.beanOpacity < 0.98)) {
-    beanMat.transparent = state.beanOpacity < 0.98;
-    beanMat.needsUpdate = true;
+  /* ===== Grain — ne tourne plus s'il est "gone" ===== */
+  if (!state.beanGone) {
+    if (!isDragging || !state.globeVisible) {
+      beanGroup.rotation.y += 0.0025;
+    }
+    beanMat.opacity = state.beanOpacity;
+    if (beanMat.transparent !== (state.beanOpacity < 0.98)) {
+      beanMat.transparent = state.beanOpacity < 0.98;
+      beanMat.needsUpdate = true;
+    }
+  } else {
+    /* Grain définitivement caché */
+    beanGroup.visible = false;
   }
 
+  /* ===== Globe ===== */
   if (globeGroup.visible !== state.globeVisible) {
     globeGroup.visible = state.globeVisible;
   }
@@ -747,42 +771,47 @@ function tick(){
     m.ring.scale.setScalar(rpulse);
   });
 
+  /* ===== Particules ===== */
   particles.rotation.y = t * 0.05;
   particles.rotation.x = Math.sin(t * 0.3) * 0.05;
 
-    /* ===== Nappe liquide : mise à jour du temps ===== */
+  /* ===== Nappe liquide : temps ===== */
   liquidMat.uniforms.uTime.value = t;
 
   /* ===== Bulles ===== */
-  const liquidY = liquid.position.y;
-  const liquidTop = liquidY + 1.2;
+  if (bubbles.visible) {
+    const liquidY = liquid.position.y;
+    const liquidTop = liquidY + 1.2;
 
-  for (let i = 0; i < bubbleCount; i++){
-    const b = bubbleData[i];
-    b.y += b.speed * 0.016 * 2;
+    for (let i = 0; i < bubbleCount; i++){
+      const b = bubbleData[i];
+      b.y += b.speed * 0.016 * 2;
 
-    if (b.y > liquidTop){
-      b.y = liquidY - 1.5 + Math.random() * 0.5;
-      b.x = (Math.random() - 0.5) * 8;
-      b.z = (Math.random() - 0.5) * 4 - 1;
+      if (b.y > liquidTop){
+        b.y = liquidY - 1.5 + Math.random() * 0.5;
+        b.x = (Math.random() - 0.5) * 8;
+        b.z = (Math.random() - 0.5) * 4 - 1;
+      }
+
+      const wobX = Math.sin(t * 2 + b.phase) * 0.05;
+      const wobZ = Math.cos(t * 1.7 + b.phase) * 0.05;
+
+      dummyPos.set(b.x + wobX, b.y, b.z + wobZ);
+      dummyScale.setScalar(b.size);
+      dummyQuat.set(0, 0, 0, 1);
+      dummyMat.compose(dummyPos, dummyQuat, dummyScale);
+      bubbles.setMatrixAt(i, dummyMat);
     }
-
-    const wobX = Math.sin(t * 2 + b.phase) * 0.05;
-    const wobZ = Math.cos(t * 1.7 + b.phase) * 0.05;
-
-    dummyPos.set(b.x + wobX, b.y, b.z + wobZ);
-    dummyScale.setScalar(b.size);
-    dummyQuat.set(0, 0, 0, 1);
-    dummyMat.compose(dummyPos, dummyQuat, dummyScale);
-    bubbles.setMatrixAt(i, dummyMat);
+    bubbles.instanceMatrix.needsUpdate = true;
   }
-  bubbles.instanceMatrix.needsUpdate = true;
 
-  gold.position.x = Math.cos(t * 0.6) * 3 + beanGroup.position.x;
+  /* ===== Lumière dorée (uniquement si le grain existe) ===== */
+  if (!state.beanGone) {
+    gold.position.x = Math.cos(t * 0.6) * 3 + beanGroup.position.x;
+    gold.position.z = Math.sin(t * 0.6) * 3;
+  }
 
-  gold.position.x = Math.cos(t * 0.6) * 3 + beanGroup.position.x;
-  gold.position.z = Math.sin(t * 0.6) * 3;
-
+  /* ===== Caméra ===== */
   cameraParallax.x += (mouse.x * 0.35 - cameraParallax.x) * 0.05;
   cameraParallax.y += (mouse.y * 0.25 - cameraParallax.y) * 0.05;
 
@@ -799,3 +828,4 @@ function tick(){
 tick();
 
 console.log('%cMéridien', 'font-family: serif; font-size: 20px; color: #C9A227;');
+scene.add(particles);
