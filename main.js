@@ -371,19 +371,19 @@ scene.add(particles);/* ============================================
    SÉQUENCE FINALE — Nappe liquide + bulles + impact
    ============================================ */
 
-/* --- Nappe liquide avec physique réaliste --- */
-const liquidGeo = new THREE.PlaneGeometry(20, 10, 128, 64);
+/* --- Nappe liquide : plan TRÈS grand, HORIZONTAL --- */
+const liquidGeo = new THREE.PlaneGeometry(80, 40, 200, 100);
 const liquidMat = new THREE.ShaderMaterial({
   transparent: true,
   depthWrite: false,
   uniforms: {
     uTime:         { value: 0 },
     uProgress:     { value: 0 },
-    uAgitation:    { value: 1.0 },    // ⬅️ décroît avec le temps (0.15 au repos)
-    uImpactTime:   { value: -1 },     // ⬅️ -1 = pas d'impact, sinon temps depuis impact
-    uColor1:       { value: new THREE.Color(0x8a5a38) },
-    uColor2:       { value: new THREE.Color(0xb8825a) },
-    uColor3:       { value: new THREE.Color(0xd4a878) },
+    uAgitation:    { value: 1.5 },   // ⬅️ démarre fort
+    uImpactTime:   { value: -1 },
+    uColor1:       { value: new THREE.Color(0xc68a5e) },   // ⬅️ café clair
+    uColor2:       { value: new THREE.Color(0xe0b088) },   // ⬅️ crème/caramel
+    uColor3:       { value: new THREE.Color(0xf0d0a8) },   // ⬅️ reflets clairs
   },
   vertexShader: `
     varying vec2 vUv;
@@ -395,23 +395,21 @@ const liquidMat = new THREE.ShaderMaterial({
       vUv = uv;
       vec3 pos = position;
 
-      /* Vagues basse fréquence (houle) */
-      float wave1 = sin(pos.x * 0.8 + uTime * 1.2) * 0.10
-                  + cos(pos.x * 1.3 + uTime * 0.7) * 0.07;
+      /* Houle basse fréquence */
+      float wave1 = sin(pos.x * 0.35 + uTime * 0.9) * 0.45
+                  + cos(pos.x * 0.55 + uTime * 0.6) * 0.30
+                  + sin(pos.z * 0.4 + uTime * 0.8) * 0.20;
 
-      /* Vagues haute fréquence (clapotis) */
-      float wave2 = sin(pos.x * 3.5 + uTime * 2.8) * 0.04
-                  + sin(pos.x * 5.2 - uTime * 3.4) * 0.025
-                  + cos(pos.z * 2.1 + uTime * 2.1) * 0.03;
+      /* Clapotis haute fréquence, proportionnel à l'agitation */
+      float wave2 = (sin(pos.x * 1.8 + uTime * 2.8) * 0.18
+                   + sin(pos.x * 3.2 - uTime * 3.4) * 0.12
+                   + cos(pos.z * 2.1 + uTime * 2.1) * 0.15) * uAgitation;
 
       /* Micro-respiration permanente */
-      float breath = sin(uTime * 0.4) * 0.015;
+      float breath = sin(uTime * 0.4) * 0.04;
 
-      float wave = (wave1 + wave2 * uAgitation) * uAgitation + breath;
-
-      /* Atténuation aux bords */
-      float edge = smoothstep(0.0, 0.15, uv.x) * smoothstep(1.0, 0.85, uv.x);
-      pos.z += wave * edge;
+      float wave = wave1 * (0.5 + uAgitation * 0.5) + wave2 + breath;
+      pos.z += wave;
 
       vWave = wave;
 
@@ -453,40 +451,49 @@ const liquidMat = new THREE.ShaderMaterial({
     void main(){
       vec2 uv = vUv;
 
-      /* Reflets mouvants : 2 bruits à vitesses différentes */
-      float n1 = fbm(uv * 3.0 + vec2(uTime * 0.15, uTime * 0.10));
-      float n2 = fbm(uv * 6.0 + vec2(-uTime * 0.20, uTime * 0.08));
+      /* Reflets organiques : 2 bruits à vitesses différentes */
+      float n1 = fbm(uv * 2.5 + vec2(uTime * 0.12, uTime * 0.08));
+      float n2 = fbm(uv * 5.0 + vec2(-uTime * 0.18, uTime * 0.06));
 
-      /* Distorsion des UV pour un effet organique */
-      vec2 distUv = uv + vec2((n1 - 0.5) * 0.08, (n2 - 0.5) * 0.05);
+      vec2 distUv = uv + vec2((n1 - 0.5) * 0.06, (n2 - 0.5) * 0.04);
 
-      /* Couleur de base */
-      float blend = fbm(distUv * 2.0 + uTime * 0.05);
+      /* Couleur de base café clair */
+      float blend = fbm(distUv * 1.8 + uTime * 0.04);
       vec3 col = mix(uColor1, uColor2, blend);
 
-      /* Ondulation circulaire au point d'impact */
+      /* Reflets mouvants qui suivent les vagues */
+      float crest = smoothstep(-0.1, 0.4, vWave);
+      col = mix(col, uColor3, crest * 0.35);
+
+      /* Écume dorée claire sur les crêtes */
+      float highlight = smoothstep(0.78, 0.98, blend);
+      col = mix(col, uColor3, highlight * 0.30);
+
+      /* Ondulation circulaire impact — grosse, visible, dégressive */
       if (uImpactTime >= 0.0) {
         float t = uImpactTime;
         vec2 center = vec2(0.5, 0.5);
         float d = distance(uv, center);
-        /* L'onde s'éloigne du centre */
-        float waveR = t * 1.2;
-        float ring = exp(-pow((d - waveR) * 12.0, 2.0));
-        /* S'affaiblit avec le temps */
-        float strength = exp(-t * 1.5);
-        col += uColor3 * ring * strength * 0.6;
+
+        /* Plusieurs anneaux qui partent du centre */
+        float waveR1 = t * 0.35;
+        float waveR2 = t * 0.5;
+        float waveR3 = t * 0.7;
+
+        float ring1 = exp(-pow((d - waveR1) * 20.0, 2.0));
+        float ring2 = exp(-pow((d - waveR2) * 25.0, 2.0)) * 0.7;
+        float ring3 = exp(-pow((d - waveR3) * 30.0, 2.0)) * 0.5;
+
+        float ripple = (ring1 + ring2 + ring3) * exp(-t * 0.9);
+
+        /* Le ripple modifie la luminosité et la couleur */
+        col += uColor3 * ripple * 0.9;
+        col = mix(col, uColor2, ripple * 0.5);
       }
 
-      /* Reflets mouvants sur les crêtes (surface mouillée) */
-      float crest = smoothstep(0.05, 0.20, abs(vWave));
-      col += uColor3 * crest * n1 * 0.35;
-
-      /* Écume dorée légère sur les hauts du bruit */
-      float highlight = smoothstep(0.85, 0.98, blend);
-      col = mix(col, uColor3, highlight * 0.30);
-
-      /* Fondu gauche/droite court (évite le "dégradé diagonal") */
-      float edgeFade = smoothstep(0.0, 0.08, uv.x) * smoothstep(1.0, 0.92, uv.x);
+      /* Fondu très large sur les bords (bien au-delà du champ visible) */
+      float edgeFade = smoothstep(0.0, 0.15, uv.x) * smoothstep(1.0, 0.85, uv.x)
+                     * smoothstep(0.0, 0.15, uv.y) * smoothstep(1.0, 0.85, uv.y);
 
       float alpha = edgeFade * uProgress;
 
@@ -496,7 +503,7 @@ const liquidMat = new THREE.ShaderMaterial({
 });
 const liquid = new THREE.Mesh(liquidGeo, liquidMat);
 liquid.position.set(0, -8, 0);
-liquid.rotation.x = -Math.PI / 2.2;
+liquid.rotation.x = -Math.PI / 2;   // ⬅️ PARFAITEMENT HORIZONTAL
 liquid.visible = false;
 scene.add(liquid);
 
@@ -504,7 +511,7 @@ scene.add(liquid);
 const bubbleCount = isMobile ? 40 : 90;
 const bubbleGeo = new THREE.SphereGeometry(1, 8, 8);
 const bubbleMat = new THREE.MeshBasicMaterial({
-  color: 0xC9A227,
+  color: 0xd4a878,
   transparent: true,
   opacity: 0,
   depthWrite: false,
@@ -523,39 +530,20 @@ const dummyQuat = new THREE.Quaternion();
 
 for (let i = 0; i < bubbleCount; i++){
   bubbleData.push({
-    x: (Math.random() - 0.5) * 8,
+    x: (Math.random() - 0.5) * 12,
     y: -8 + Math.random() * 8,
-    z: (Math.random() - 0.5) * 4 - 1,
+    z: (Math.random() - 0.5) * 6 - 1,
     speed: 0.3 + Math.random() * 0.6,
     size: 0.02 + Math.random() * 0.06,
     phase: Math.random() * Math.PI * 2,
   });
 }
 
-/* --- Impact : disque plat qui s'étend + gouttelettes --- */
-
-/* Disque plat horizontal (onde de choc liquide) */
-const impactDiscGeo = new THREE.CircleGeometry(1, 64);
-impactDiscGeo.rotateX(-Math.PI / 2);   // à plat
-const impactDiscMat = new THREE.MeshBasicMaterial({
-  color: 0xd4a878,
-  transparent: true,
-  opacity: 0,
-  blending: THREE.AdditiveBlending,
-  depthWrite: false,
-  depthTest: false,
-  side: THREE.DoubleSide,
-});
-const impactDisc = new THREE.Mesh(impactDiscGeo, impactDiscMat);
-impactDisc.position.set(0, -3, 0);
-impactDisc.visible = false;
-scene.add(impactDisc);
-
-/* Gouttelettes : InstancedMesh de petites sphères qui jaillissent */
-const dropletCount = isMobile ? 12 : 24;
+/* --- Gouttelettes d'impact --- */
+const dropletCount = isMobile ? 16 : 30;
 const dropletGeo = new THREE.SphereGeometry(1, 6, 6);
 const dropletMat = new THREE.MeshBasicMaterial({
-  color: 0xd4a878,
+  color: 0xe0b088,
   transparent: true,
   opacity: 0,
   depthWrite: false,
@@ -568,13 +556,13 @@ scene.add(droplets);
 
 const dropletData = [];
 for (let i = 0; i < dropletCount; i++){
-  const angle = (i / dropletCount) * Math.PI * 2 + Math.random() * 0.5;
-  const speed = 1.5 + Math.random() * 1.5;
+  const angle = (i / dropletCount) * Math.PI * 2 + Math.random() * 0.4;
+  const speed = 1.8 + Math.random() * 1.8;
   dropletData.push({
     vx: Math.cos(angle) * speed,
-    vy: 2.5 + Math.random() * 2,
-    vz: Math.sin(angle) * speed * 0.4,
-    size: 0.03 + Math.random() * 0.04,
+    vy: 2.8 + Math.random() * 2.2,
+    vz: Math.sin(angle) * speed * 0.5,
+    size: 0.04 + Math.random() * 0.05,
     startY: -3,
   });
 }
@@ -655,9 +643,7 @@ tl
   .to(camera, { fov: 52, ease: 'power2.inOut', duration: 0.6, onUpdate: () => camera.updateProjectionMatrix() }, 4.7)
   .to(lookAtTarget, { x: 0.2, y: -0.3, ease: 'power2.inOut', duration: 0.6 }, 4.7)
 
-  /* ==========================================
-     PHASE 6 — CHUTE DU GRAIN
-     ========================================== */
+  /* PHASE 6 — CHUTE DU GRAIN */
   .to(beanGroup.position, { y: -14, ease: 'power2.in', duration: 0.7 }, 5.3)
   .to(beanGroup.rotation, { x: 4, y: Math.PI * 12, ease: 'power1.in', duration: 0.7 }, 5.3)
   .set(state, { beanGone: true }, 6.0)
@@ -668,41 +654,33 @@ tl
      PHASE 7 — IMPACT LIQUIDE + MONTÉE
      ========================================== */
 
-  /* Impact : disque qui s'étend */
-  .set(impactDisc, { visible: true }, 6.0)
-  .set(impactDisc.scale, { x: 0.01, y: 0.01, z: 0.01 }, 6.0)
-  .to(impactDiscMat, { opacity: 0.8, ease: 'power2.out', duration: 0.05 }, 6.0)
-  .to(impactDisc.scale, { x: 4, y: 1, z: 4, ease: 'power3.out', duration: 0.7 }, 6.0)
-  .to(impactDiscMat, { opacity: 0, ease: 'power2.in', duration: 0.5 }, 6.3)
-  .set(impactDisc, { visible: false }, 6.9)
-
-  /* Impact : gouttelettes qui jaillissent */
+  /* Gouttelettes qui jaillissent à l'impact */
   .set(droplets, { visible: true }, 6.0)
-  .to(dropletMat, { opacity: 0.9, ease: 'power2.out', duration: 0.05 }, 6.0)
-  .to(dropletMat, { opacity: 0, ease: 'power2.in', duration: 0.8 }, 6.4)
-  .set(droplets, { visible: false }, 7.2)
+  .to(dropletMat, { opacity: 0.95, ease: 'power2.out', duration: 0.05 }, 6.0)
+  .to(dropletMat, { opacity: 0, ease: 'power2.in', duration: 0.9 }, 6.5)
+  .set(droplets, { visible: false }, 7.4)
 
-  /* Impact : ondulation circulaire dans le shader */
+  /* Impact : ondulation dans le shader */
   .set(liquidMat.uniforms.uImpactTime, { value: 0 }, 6.0)
-  .to(liquidMat.uniforms.uImpactTime, { value: 2.5, ease: 'power1.out', duration: 1.5 }, 6.0)
+  .to(liquidMat.uniforms.uImpactTime, { value: 3, ease: 'power1.out', duration: 2 }, 6.0)
 
-  /* Agitation : forte au début, décroît */
-  .set(liquidMat.uniforms.uAgitation, { value: 1.0 }, 6.0)
-  .to(liquidMat.uniforms.uAgitation, { value: 0.15, ease: 'power2.out', duration: 3 }, 6.0)
+  /* Agitation : forte au début, décroît lentement */
+  .set(liquidMat.uniforms.uAgitation, { value: 1.5 }, 6.0)
+  .to(liquidMat.uniforms.uAgitation, { value: 0.3, ease: 'power2.out', duration: 3.5 }, 6.0)
 
-  /* Liquide apparaît */
+  /* Liquide apparaît et monte */
   .set(liquid, { visible: true }, 6.0)
   .to(liquidMat.uniforms.uProgress, { value: 1, ease: 'power2.out', duration: 1.5 }, 6.0)
-  .to(liquid.position, { y: -3.2, ease: 'power2.out', duration: 1.5 }, 6.0)
+  .to(liquid.position, { y: -3.5, ease: 'power2.out', duration: 1.5 }, 6.0)
 
   /* Bulles apparaissent */
   .set(bubbles, { visible: true }, 6.2)
-  .to(bubbleMat, { opacity: 0.55, ease: 'power2.out', duration: 1 }, 6.2)
+  .to(bubbleMat, { opacity: 0.6, ease: 'power2.out', duration: 1 }, 6.2)
 
   /* Caméra recule */
-  .to(cameraBase, { z: 8.5, x: 0, y: 0.3, ease: 'power2.inOut', duration: 1.5 }, 6.0)
+  .to(cameraBase, { z: 8.5, x: 0, y: 0.5, ease: 'power2.inOut', duration: 1.5 }, 6.0)
   .to(camera, { fov: 55, ease: 'power2.inOut', duration: 1.5, onUpdate: () => camera.updateProjectionMatrix() }, 6.0)
-  .to(lookAtTarget, { x: 0, y: -1.2, ease: 'power2.inOut', duration: 1.5 }, 6.0);
+  .to(lookAtTarget, { x: 0, y: -1.5, ease: 'power2.inOut', duration: 1.5 }, 6.0);
 
 /* ============================================
    INTERACTIONS
@@ -713,8 +691,7 @@ const pointerNDC = new THREE.Vector2();
 let isDragging = false;
 let hasMoved = false;
 let prevPointer = { x: 0, y: 0 };
-let impactStartTime = -1;   // temps où l'impact a commencé (pour gouttelettes)
-let dropletActive = false;
+let dropletLocalTime = 0;
 
 const dotMeshes = markers.map(m => m.dot);
 
@@ -806,13 +783,9 @@ addEventListener('resize', () => {
    ============================================ */
 const clock = new THREE.Clock();
 
-/* Pour les gouttelettes : on garde le temps local depuis le début de l'impact */
-let dropletLocalTime = 0;
-
 function tick(){
   const t = clock.getElapsedTime();
 
-  /* ===== MORPHING ===== */
   const isMorphing = state.morph > 0.002 && state.morph < 0.998;
   if (isMorphing) {
     const arr = beanGeo.attributes.position.array;
@@ -833,7 +806,6 @@ function tick(){
 
   flashMat.opacity = state.flash;
 
-  /* ===== Grain ===== */
   if (!state.beanGone) {
     if (!isDragging || !state.globeVisible) {
       beanGroup.rotation.y += 0.0025;
@@ -847,7 +819,6 @@ function tick(){
     beanGroup.visible = false;
   }
 
-  /* ===== Globe ===== */
   if (globeGroup.visible !== state.globeVisible) {
     globeGroup.visible = state.globeVisible;
   }
@@ -863,29 +834,25 @@ function tick(){
     m.ring.scale.setScalar(rpulse);
   });
 
-  /* ===== Particules ===== */
   particles.rotation.y = t * 0.05;
   particles.rotation.x = Math.sin(t * 0.3) * 0.05;
 
-  /* ===== Nappe liquide : temps ===== */
   liquidMat.uniforms.uTime.value = t;
 
-  /* ===== Gouttelettes : animation pendant l'impact ===== */
+  /* ===== Gouttelettes ===== */
   if (droplets.visible) {
-    /* On détecte le début de l'impact en surveillant la valeur de uImpactTime */
     const impactT = liquidMat.uniforms.uImpactTime.value;
     if (impactT >= 0) {
       dropletLocalTime += 0.016;
 
       for (let i = 0; i < dropletCount; i++){
         const d = dropletData[i];
-        /* Physique simple : x = vx * t, y = startY + vy*t - 0.5*g*t² */
         const px = d.vx * dropletLocalTime;
-        const py = d.startY + d.vy * dropletLocalTime - 4.5 * dropletLocalTime * dropletLocalTime;
+        const py = d.startY + d.vy * dropletLocalTime - 5.5 * dropletLocalTime * dropletLocalTime;
         const pz = d.vz * dropletLocalTime;
 
         dummyPos.set(px, py, pz);
-        const scale = Math.max(0.01, 1 - dropletLocalTime * 0.6);
+        const scale = Math.max(0.01, 1 - dropletLocalTime * 0.5);
         dummyScale.setScalar(d.size * scale);
         dummyQuat.set(0, 0, 0, 1);
         dummyMat.compose(dummyPos, dummyQuat, dummyScale);
@@ -908,8 +875,8 @@ function tick(){
 
       if (b.y > liquidTop){
         b.y = liquidY - 1.5 + Math.random() * 0.5;
-        b.x = (Math.random() - 0.5) * 8;
-        b.z = (Math.random() - 0.5) * 4 - 1;
+        b.x = (Math.random() - 0.5) * 12;
+        b.z = (Math.random() - 0.5) * 6 - 1;
       }
 
       const wobX = Math.sin(t * 2 + b.phase) * 0.05;
@@ -924,13 +891,11 @@ function tick(){
     bubbles.instanceMatrix.needsUpdate = true;
   }
 
-  /* ===== Lumière dorée ===== */
   if (!state.beanGone) {
     gold.position.x = Math.cos(t * 0.6) * 3 + beanGroup.position.x;
     gold.position.z = Math.sin(t * 0.6) * 3;
   }
 
-  /* ===== Caméra ===== */
   cameraParallax.x += (mouse.x * 0.35 - cameraParallax.x) * 0.05;
   cameraParallax.y += (mouse.y * 0.25 - cameraParallax.y) * 0.05;
 
