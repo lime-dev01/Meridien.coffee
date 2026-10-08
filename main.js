@@ -582,7 +582,29 @@ tl
   .to(particles.material, { size: 0.04, opacity: 0.5, ease: 'none', duration: 1 }, 4.7)
   .to(cameraBase, { z: 7, x: 0.3, y: -0.2, ease: 'power2.inOut', duration: 1 }, 4.7)
   .to(camera, { fov: 52, ease: 'power2.inOut', duration: 1, onUpdate: () => camera.updateProjectionMatrix() }, 4.7)
-  .to(lookAtTarget, { x: 0.2, y: -0.3, ease: 'power2.inOut', duration: 1 }, 4.7);
+  .to(lookAtTarget, { x: 0.2, y: -0.3, ease: 'power2.inOut', duration: 1 }, 4.7)
+
+  /* ==========================================
+     PHASE 6 — LE GRAIN TOMBE DANS LE VIDE
+     ========================================== */
+  .to(state, { beanOpacity: 0, ease: 'none', duration: 0.02 }, 5.0)
+  .to(beanGroup.position, { y: -12, ease: 'power2.in', duration: 0.6 }, 4.95)
+  .to(beanGroup.rotation, { x: 4, y: Math.PI * 12, ease: 'power1.in', duration: 0.6 }, 4.95)
+
+  /* ==========================================
+     PHASE 7 — MONTÉE DU LIQUIDE
+     ========================================== */
+  .to(finalFlashMat, { opacity: 0.9, ease: 'power2.out', duration: 0.1 }, 5.6)
+  .to(finalFlashMat, { opacity: 0, ease: 'power2.in', duration: 0.4 }, 5.7)
+
+  .to(liquidMat.uniforms.uProgress, { value: 1, ease: 'power2.out', duration: 1.2 }, 5.5)
+  .to(liquid.position, { y: -2.5, ease: 'power2.out', duration: 1.2 }, 5.5)
+
+  .to(bubbleMat, { opacity: 0.7, ease: 'power2.out', duration: 1 }, 5.7)
+
+  .to(cameraBase, { z: 8, x: 0, y: 0.3, ease: 'power2.inOut', duration: 1.2 }, 5.5)
+  .to(camera, { fov: 55, ease: 'power2.inOut', duration: 1.2, onUpdate: () => camera.updateProjectionMatrix() }, 5.5)
+  .to(lookAtTarget, { x: 0, y: -1, ease: 'power2.inOut', duration: 1.2 }, 5.5);
 
 const raycaster = new THREE.Raycaster();
 const pointerNDC = new THREE.Vector2();
