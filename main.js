@@ -4,7 +4,7 @@
 
 import * as THREE from 'three';
 
-const isMobile = window.matchMedia('(max-width: 768px)').matches
+const isMobile = window.matchMedia('(max-wfidth: 768px)').matches
               || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
 const PERF = {
@@ -749,6 +749,36 @@ function tick(){
 
   particles.rotation.y = t * 0.05;
   particles.rotation.x = Math.sin(t * 0.3) * 0.05;
+
+    /* ===== Nappe liquide : mise à jour du temps ===== */
+  liquidMat.uniforms.uTime.value = t;
+
+  /* ===== Bulles ===== */
+  const liquidY = liquid.position.y;
+  const liquidTop = liquidY + 1.2;
+
+  for (let i = 0; i < bubbleCount; i++){
+    const b = bubbleData[i];
+    b.y += b.speed * 0.016 * 2;
+
+    if (b.y > liquidTop){
+      b.y = liquidY - 1.5 + Math.random() * 0.5;
+      b.x = (Math.random() - 0.5) * 8;
+      b.z = (Math.random() - 0.5) * 4 - 1;
+    }
+
+    const wobX = Math.sin(t * 2 + b.phase) * 0.05;
+    const wobZ = Math.cos(t * 1.7 + b.phase) * 0.05;
+
+    dummyPos.set(b.x + wobX, b.y, b.z + wobZ);
+    dummyScale.setScalar(b.size);
+    dummyQuat.set(0, 0, 0, 1);
+    dummyMat.compose(dummyPos, dummyQuat, dummyScale);
+    bubbles.setMatrixAt(i, dummyMat);
+  }
+  bubbles.instanceMatrix.needsUpdate = true;
+
+  gold.position.x = Math.cos(t * 0.6) * 3 + beanGroup.position.x;
 
   gold.position.x = Math.cos(t * 0.6) * 3 + beanGroup.position.x;
   gold.position.z = Math.sin(t * 0.6) * 3;
