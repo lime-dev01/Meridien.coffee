@@ -462,8 +462,8 @@ const liquidMat = new THREE.ShaderMaterial({
       vec3 col = mix(uColor1, uColor2, blend);
 
       /* Reflets mouvants qui suivent les vagues */
-      float crest = smoothstep(-0.1, 0.4, vWave);
-      col = mix(col, uColor3, crest * 0.35);
+      float crest = smoothstep(0.0, 0.3, vWave);
+      col = mix(col, uColor3, crest * 0.25);
 
       /* Écume dorée claire sur les crêtes */
       float highlight = smoothstep(0.78, 0.98, blend);
@@ -484,8 +484,8 @@ const liquidMat = new THREE.ShaderMaterial({
         float ring2 = exp(-pow((d - waveR2) * 25.0, 2.0)) * 0.7;
         float ring3 = exp(-pow((d - waveR3) * 30.0, 2.0)) * 0.5;
 
-        float ripple = (ring1 + ring2 + ring3) * exp(-t * 0.9);
-
+        float ripple = (ring1 + ring2 + ring3) * exp(-t * 0.7);
+                
         /* Le ripple modifie la luminosité et la couleur */
         col += uColor3 * ripple * 0.9;
         col = mix(col, uColor2, ripple * 0.5);
