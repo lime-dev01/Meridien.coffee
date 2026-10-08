@@ -381,9 +381,9 @@ const liquidMat = new THREE.ShaderMaterial({
     uProgress:     { value: 0 },
     uAgitation:    { value: 1.5 },   // ⬅️ démarre fort
     uImpactTime:   { value: -1 },
-    uColor1:       { value: new THREE.Color(0xc68a5e) },   // ⬅️ café clair
-    uColor2:       { value: new THREE.Color(0xe0b088) },   // ⬅️ crème/caramel
-    uColor3:       { value: new THREE.Color(0xf0d0a8) },   // ⬅️ reflets clairs
+    uColor1:       { value: new THREE.Color(0x4a2a18) },  // café foncé profond
+    uColor2:       { value: new THREE.Color(0x8a5a38) },  // brun torréfié
+    uColor3:       { value: new THREE.Color(0xb8825a) },  // brun clair (reflets)
   },
   vertexShader: `
     varying vec2 vUv;
@@ -396,9 +396,9 @@ const liquidMat = new THREE.ShaderMaterial({
       vec3 pos = position;
 
       /* Houle basse fréquence */
-      float wave1 = sin(pos.x * 0.35 + uTime * 0.9) * 0.45
-                  + cos(pos.x * 0.55 + uTime * 0.6) * 0.30
-                  + sin(pos.z * 0.4 + uTime * 0.8) * 0.20;
+            float wave1 = sin(pos.x * 0.35 + uTime * 0.9) * 0.18
+                  + cos(pos.x * 0.55 + uTime * 0.6) * 0.12
+                  + sin(pos.z * 0.4 + uTime * 0.8) * 0.08;
 
       /* Clapotis haute fréquence, proportionnel à l'agitation */
       float wave2 = (sin(pos.x * 1.8 + uTime * 2.8) * 0.18
@@ -492,10 +492,12 @@ const liquidMat = new THREE.ShaderMaterial({
       }
 
       /* Fondu très large sur les bords (bien au-delà du champ visible) */
-      float edgeFade = smoothstep(0.0, 0.15, uv.x) * smoothstep(1.0, 0.85, uv.x)
-                     * smoothstep(0.0, 0.15, uv.y) * smoothstep(1.0, 0.85, uv.y);
+            /* Fondu très court, uniquement sur les bords extrêmes */
+      float edgeFade = smoothstep(0.0, 0.03, uv.x) * smoothstep(1.0, 0.97, uv.x)
+                     * smoothstep(0.0, 0.03, uv.y) * smoothstep(1.0, 0.97, uv.y);
 
-      float alpha = edgeFade * uProgress;
+      /* Alpha presque opaque au centre */
+      float alpha = clamp(edgeFade * uProgress * 1.4, 0.0, 1.0);
 
       gl_FragColor = vec4(col, alpha);
     }
@@ -674,9 +676,9 @@ tl
   .to(liquid.position, { y: -3.5, ease: 'power2.out', duration: 1.5 }, 6.0)
 
   /* Bulles apparaissent */
-  .set(bubbles, { visible: true }, 6.2)
-  .to(bubbleMat, { opacity: 0.6, ease: 'power2.out', duration: 1 }, 6.2)
-
+    .set(bubbles, { visible: true }, 6.2)
+  .to(bubbleMat, { opacity: 0.55, ease: 'power2.out', duration: 1 }, 6.2)
+  
   /* Caméra recule */
   .to(cameraBase, { z: 8.5, x: 0, y: 0.5, ease: 'power2.inOut', duration: 1.5 }, 6.0)
   .to(camera, { fov: 55, ease: 'power2.inOut', duration: 1.5, onUpdate: () => camera.updateProjectionMatrix() }, 6.0)
