@@ -55,6 +55,7 @@ renderer.setPixelRatio(PERF.pixelRatio);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
 
+/* ---------- LUMIÈRES (Inchangées) ---------- */
 scene.add(new THREE.AmbientLight(0xffffff, 0.8));
 scene.add(new THREE.HemisphereLight(0xFFF2D6, 0x3a2416, 0.7));
 const key = new THREE.DirectionalLight(0xfff2d6, 1.2);
@@ -74,12 +75,20 @@ const state = {
   beanGone: false,
 };
 
-function fbmTexture(size = PERF.fbmSize){
-  const c = document.createElement('canvas');
-  c.width = c.height = size;
-  const ctx = c.getContext('2d');
-  const img = ctx.createImageData(size, size);
-  const data = img.data;
+/* ============================================
+   TEXTURES AMÉLIORÉES POUR LE GRAIN
+   ============================================ */
+function createBeanTextures(size = 512) {
+  const cCanvas = document.createElement('canvas');
+  cCanvas.width = cCanvas.height = size;
+  const ctxColor = cCanvas.getContext('2d');
+  
+  const bCanvas = document.createElement('canvas');
+  bCanvas.width = bCanvas.height = size;
+  const ctxBump = bCanvas.getContext('2d');
+
+  const imgColor = ctxColor.createImageData(size, size);
+  const imgBump = ctxBump.createImageData(size, size);
 
   const hash = (x, y) => {
     let n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
@@ -102,59 +111,44 @@ function fbmTexture(size = PERF.fbmSize){
 
   for (let y = 0; y < size; y++){
     for (let x = 0; x < size; x++){
-      let n = fbm(x / 25, y / 25, 6);
-      const micro = fbm(x / 3, y / 3, 3) * 0.15;
-      n = n * 0.75 + micro * 0.25;
-      const vein = Math.sin((x / size) * Math.PI * 14 + fbm(x / 20, y / 20, 4) * 10) * 0.5 + 0.5;
-      n = n * 0.82 + vein * 0.18;
-      const v = Math.floor(n * 255);
-      const i = (y * size + x) * 4;
-      data[i] = data[i+1] = data[i+2] = v;
-      data[i+3] = 255;
-    }
-  }
-  ctx.putImageData(img, 0, 0);
-  const tex = new THREE.CanvasTexture(c);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(3, 5);
-  tex.anisotropy = 8;
-  return tex;
-}
+      // Bruit haute fréquence pour la texture du grain
+      let n = fbm(x / 15, y / 15, 6);
+      const micro = fbm(x / 3, y / 3, 3) * 0.2;
+      n = n * 0.8 + micro * 0.2;
+      
+      // Fissure centrale du grain
+      const vein = Math.sin((x / size) * Math.PI * 16 + fbm(x / 20, y / 20, 4) * 12) * 0.5 + 0.5;
+      n = n * 0.85 + vein * 0.15;
 
-function roughnessTexture(size = 512){
-  const c = document.createElement('canvas');
-  c.width = c.height = size;
-  const ctx = c.getContext('2d');
-  const img = ctx.createImageData(size, size);
-  const data = img.data;
-  const hash = (x, y) => {
-    let n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
-    return n - Math.floor(n);
-  };
-  const noise = (x, y) => {
-    const xi = Math.floor(x), yi = Math.floor(y);
-    const xf = x - xi, yf = y - yi;
-    const u = xf * xf * (3 - 2 * xf);
-    const v = yf * yf * (3 - 2 * yf);
-    const a = hash(xi, yi), b = hash(xi + 1, yi);
-    const cc = hash(xi, yi + 1), d = hash(xi + 1, yi + 1);
-    return a * (1 - u) * (1 - v) + b * u * (1 - v) + cc * (1 - u) * v + d * u * v;
-  };
-  for (let y = 0; y < size; y++){
-    for (let x = 0; x < size; x++){
-      const n = noise(x / 8, y / 8) * 0.5 + noise(x / 3, y / 3) * 0.5;
-      const r = 0.55 + n * 0.35;
-      const v = Math.floor(r * 255);
       const i = (y * size + x) * 4;
-      data[i] = data[i+1] = data[i+2] = v;
-      data[i+3] = 255;
+
+      // 1. Couleur (Brun avec variations, fissure plus sombre)
+      const r = 60 + n * 40 - vein * 20;
+      const g = 30 + n * 20 - vein * 10;
+      const b = 15 + n * 10 - vein * 5;
+      imgColor.data[i] = r;
+      imgColor.data[i+1] = g;
+      imgColor.data[i+2] = b;
+      imgColor.data[i+3] = 255;
+
+      // 2. Bump (Reliefs du grain)
+      const bumpVal = n * 255;
+      imgBump.data[i] = imgBump.data[i+1] = imgBump.data[i+2] = bumpVal;
+      imgBump.data[i+3] = 255;
     }
   }
-  ctx.putImageData(img, 0, 0);
-  const tex = new THREE.CanvasTexture(c);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(4, 6);
-  return tex;
+  
+  ctxColor.putImageData(imgColor, 0, 0);
+  ctxBump.putImageData(imgBump, 0, 0);
+
+  const texColor = new THREE.CanvasTexture(cCanvas);
+  texColor.colorSpace = THREE.SRGBColorSpace;
+  texColor.wrapS = texColor.wrapT = THREE.RepeatWrapping;
+  
+  const texBump = new THREE.CanvasTexture(bCanvas);
+  texBump.wrapS = texBump.wrapT = THREE.RepeatWrapping;
+
+  return { texColor, texBump };
 }
 
 function radialTex(){
@@ -219,29 +213,30 @@ const sphereGeo = buildSphereTargetGeometry();
 const beanOrigPositions = new Float32Array(beanGeo.attributes.position.array);
 const sphereTargetPositions = new Float32Array(sphereGeo.attributes.position.array);
 
-const bump = fbmTexture(PERF.fbmSize);
-const rough = roughnessTexture(512);
+/* --- Application des nouvelles textures au grain --- */
+const { texColor, texBump } = createBeanTextures(PERF.fbmSize);
 
 const beanMat = new THREE.MeshPhysicalMaterial({
-  color: 0x5c3418,
-  roughness: 0.85,
-  roughnessMap: rough,
-  metalness: 0.02,
-  clearcoat: 0.15,
-  clearcoatRoughness: 0.85,
-  sheen: 0.15,
+  map: texColor,
+  roughness: 0.65,           // Un peu moins rugueux pour capter la lumière
+  metalness: 0.05,
+  clearcoat: 0.3,            // Effet légèrement huileux du café
+  clearcoatRoughness: 0.6,
+  sheen: 0.2,
   sheenColor: new THREE.Color(0xC9A227),
-  sheenRoughness: 0.95,
-  bumpMap: bump,
-  bumpScale: 0.18,
+  bumpMap: texBump,          // Utilisation de la nouvelle texture de relief
+  bumpScale: 0.08,           // Ajusté pour ne pas faire trop "pic"
+  transparent: true,
+  opacity: 1,
 });
 
 const bean = new THREE.Mesh(beanGeo, beanMat);
 const beanGroup = new THREE.Group();
 beanGroup.add(bean);
 beanGroup.position.set(START.beanX, START.beanY, START.beanZ);
-scene.add(beanGroup);
-
+scene.add(beanGroup);/* ============================================
+   GLOBE 3D (Inchangé)
+   ============================================ */
 const globeGroup = new THREE.Group();
 globeGroup.position.set(0.3, 0, 0);
 globeGroup.visible = false;
@@ -367,11 +362,11 @@ const particles = new THREE.Points(pGeo, new THREE.PointsMaterial({
   size: 0.07, map: dotTex(), transparent: true, depthWrite: false,
   blending: THREE.AdditiveBlending, color: 0xC9A227,
 }));
-scene.add(particles);/* ============================================
-   SÉQUENCE FINALE — Nappe liquide + bulles + impact
-   ============================================ */
+scene.add(particles);
 
-/* --- Nappe liquide : plan TRÈS grand, HORIZONTAL --- */
+/* ============================================
+   SÉQUENCE FINALE — LIQUIDE AMÉLIORÉ AVEC REFLETS
+   ============================================ */
 const liquidGeo = new THREE.PlaneGeometry(80, 40, 200, 100);
 const liquidMat = new THREE.ShaderMaterial({
   transparent: true,
@@ -379,15 +374,18 @@ const liquidMat = new THREE.ShaderMaterial({
   uniforms: {
     uTime:         { value: 0 },
     uProgress:     { value: 0 },
-    uAgitation:    { value: 1.5 },   // ⬅️ démarre fort
+    uAgitation:    { value: 1.5 },
     uImpactTime:   { value: -1 },
-    uColor1:       { value: new THREE.Color(0x4a2a18) },  // café foncé profond
-    uColor2:       { value: new THREE.Color(0x8a5a38) },  // brun torréfié
-    uColor3:       { value: new THREE.Color(0xb8825a) },  // brun clair (reflets)
+    uColor1:       { value: new THREE.Color(0x2a1408) },  // Café très foncé (bas)
+    uColor2:       { value: new THREE.Color(0x6b3a1e) },  // Café moyen
+    uColor3:       { value: new THREE.Color(0xd4a878) },  // Reflet / écume dorée
+    uLightPos:     { value: new THREE.Vector3(3, 4, 3) }, // On récupère la position de la Key Light
+    uCameraPos:    { value: new THREE.Vector3() },        // Mis à jour dans le tick
   },
   vertexShader: `
     varying vec2 vUv;
     varying float vWave;
+    varying vec3 vWorldPosition;
     uniform float uTime;
     uniform float uAgitation;
 
@@ -395,30 +393,31 @@ const liquidMat = new THREE.ShaderMaterial({
       vUv = uv;
       vec3 pos = position;
 
-      /* Houle basse fréquence */
-            float wave1 = sin(pos.x * 0.35 + uTime * 0.9) * 0.18
+      float wave1 = sin(pos.x * 0.35 + uTime * 0.9) * 0.18
                   + cos(pos.x * 0.55 + uTime * 0.6) * 0.12
                   + sin(pos.z * 0.4 + uTime * 0.8) * 0.08;
 
-      /* Clapotis haute fréquence, proportionnel à l'agitation */
       float wave2 = (sin(pos.x * 1.8 + uTime * 2.8) * 0.18
                    + sin(pos.x * 3.2 - uTime * 3.4) * 0.12
                    + cos(pos.z * 2.1 + uTime * 2.1) * 0.15) * uAgitation;
 
-      /* Micro-respiration permanente */
       float breath = sin(uTime * 0.4) * 0.04;
-
       float wave = wave1 * (0.5 + uAgitation * 0.5) + wave2 + breath;
-      pos.z += wave;
-
+      
+      pos.z += wave; // Déplacement local (avant rotation du mesh)
       vWave = wave;
 
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+      vec4 worldPosition = modelMatrix * vec4(pos, 1.0);
+      vWorldPosition = worldPosition.xyz;
+
+      gl_Position = projectionMatrix * viewMatrix * worldPosition;
     }
   `,
   fragmentShader: `
     varying vec2 vUv;
     varying float vWave;
+    varying vec3 vWorldPosition;
+    
     uniform float uTime;
     uniform float uProgress;
     uniform float uAgitation;
@@ -426,6 +425,8 @@ const liquidMat = new THREE.ShaderMaterial({
     uniform vec3 uColor1;
     uniform vec3 uColor2;
     uniform vec3 uColor3;
+    uniform vec3 uLightPos;
+    uniform vec3 uCameraPos;
 
     float hash(vec2 p){
       return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -451,53 +452,45 @@ const liquidMat = new THREE.ShaderMaterial({
     void main(){
       vec2 uv = vUv;
 
-      /* Reflets organiques : 2 bruits à vitesses différentes */
+      // Bruit pour déformer les reflets
       float n1 = fbm(uv * 2.5 + vec2(uTime * 0.12, uTime * 0.08));
       float n2 = fbm(uv * 5.0 + vec2(-uTime * 0.18, uTime * 0.06));
-
       vec2 distUv = uv + vec2((n1 - 0.5) * 0.06, (n2 - 0.5) * 0.04);
 
-      /* Couleur de base café clair */
+      // Couleur de base (Mélange café foncé / café moyen)
       float blend = fbm(distUv * 1.8 + uTime * 0.04);
       vec3 col = mix(uColor1, uColor2, blend);
 
-      /* Reflets mouvants qui suivent les vagues */
-      float crest = smoothstep(0.0, 0.3, vWave);
-      col = mix(col, uColor3, crest * 0.25);
+      // --- CALCUL DE L'ÉCLAIRAGE ET DES REFLETS (SPECULAR) ---
+      // On crée une fausse normale basée sur les vagues pour simuler les ondulations
+      vec3 normal = normalize(vec3(dFdx(vWorldPosition.x + n1 * 0.05), dFdy(vWorldPosition.z + n2 * 0.05), 1.0));
+      
+      // Direction de la lumière
+      vec3 lightDir = normalize(uLightPos - vWorldPosition);
+      vec3 viewDir = normalize(uCameraPos - vWorldPosition);
+      vec3 halfDir = normalize(lightDir + viewDir);
+      
+      // Calcul du reflet (Specular Phong)
+      float spec = pow(max(dot(normal, halfDir), 0.0), 80.0); 
+      
+      // Ajout du reflet doré (très lumineux) sur les crêtes
+      col += uColor3 * spec * 1.5;
 
-      /* Écume dorée claire sur les crêtes */
-      float highlight = smoothstep(0.78, 0.98, blend);
-      col = mix(col, uColor3, highlight * 0.30);
-
-      /* Ondulation circulaire impact — grosse, visible, dégressive */
+      // --- IMPACT ---
       if (uImpactTime >= 0.0) {
         float t = uImpactTime;
-        vec2 center = vec2(0.5, 0.5);
-        float d = distance(uv, center);
-
-        /* Plusieurs anneaux qui partent du centre */
-        float waveR1 = t * 0.35;
-        float waveR2 = t * 0.5;
-        float waveR3 = t * 0.7;
-
-        float ring1 = exp(-pow((d - waveR1) * 20.0, 2.0));
-        float ring2 = exp(-pow((d - waveR2) * 25.0, 2.0)) * 0.7;
-        float ring3 = exp(-pow((d - waveR3) * 30.0, 2.0)) * 0.5;
-
-        float ripple = (ring1 + ring2 + ring3) * exp(-t * 0.7);
-                
-        /* Le ripple modifie la luminosité et la couleur */
-        col += uColor3 * ripple * 0.9;
-        col = mix(col, uColor2, ripple * 0.5);
+        float d = distance(uv, vec2(0.5, 0.5));
+        float ring1 = exp(-pow((d - t * 0.35) * 20.0, 2.0));
+        float ring2 = exp(-pow((d - t * 0.5) * 25.0, 2.0)) * 0.7;
+        float ripple = (ring1 + ring2) * exp(-t * 0.7);
+        
+        col += uColor3 * ripple * 1.2; // Ondulation lumineuse
       }
 
-      /* Fondu très large sur les bords (bien au-delà du champ visible) */
-            /* Fondu très court, uniquement sur les bords extrêmes */
-      float edgeFade = smoothstep(0.0, 0.03, uv.x) * smoothstep(1.0, 0.97, uv.x)
-                     * smoothstep(0.0, 0.03, uv.y) * smoothstep(1.0, 0.97, uv.y);
-
-      /* Alpha presque opaque au centre */
-      float alpha = clamp(edgeFade * uProgress * 1.4, 0.0, 1.0);
+      // Bords (Alpha)
+      float edgeFade = smoothstep(0.0, 0.05, uv.x) * smoothstep(1.0, 0.95, uv.x)
+                     * smoothstep(0.0, 0.05, uv.y) * smoothstep(1.0, 0.95, uv.y);
+      float alpha = clamp(edgeFade * uProgress * 1.5, 0.0, 1.0);
 
       gl_FragColor = vec4(col, alpha);
     }
@@ -505,19 +498,15 @@ const liquidMat = new THREE.ShaderMaterial({
 });
 const liquid = new THREE.Mesh(liquidGeo, liquidMat);
 liquid.position.set(0, -8, 0);
-liquid.rotation.x = -Math.PI / 2;   // ⬅️ PARFAITEMENT HORIZONTAL
+liquid.rotation.x = -Math.PI / 2;
 liquid.visible = false;
 scene.add(liquid);
 
-/* --- Bulles --- */
+/* --- Bulles & Gouttelettes (Inchangé) --- */
 const bubbleCount = isMobile ? 40 : 90;
 const bubbleGeo = new THREE.SphereGeometry(1, 8, 8);
 const bubbleMat = new THREE.MeshBasicMaterial({
-  color: 0xd4a878,
-  transparent: true,
-  opacity: 0,
-  depthWrite: false,
-  blending: THREE.AdditiveBlending,
+  color: 0xd4a878, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending,
 });
 const bubbles = new THREE.InstancedMesh(bubbleGeo, bubbleMat, bubbleCount);
 bubbles.visible = false;
@@ -532,24 +521,15 @@ const dummyQuat = new THREE.Quaternion();
 
 for (let i = 0; i < bubbleCount; i++){
   bubbleData.push({
-    x: (Math.random() - 0.5) * 12,
-    y: -8 + Math.random() * 8,
-    z: (Math.random() - 0.5) * 6 - 1,
-    speed: 0.3 + Math.random() * 0.6,
-    size: 0.02 + Math.random() * 0.06,
-    phase: Math.random() * Math.PI * 2,
+    x: (Math.random() - 0.5) * 12, y: -8 + Math.random() * 8, z: (Math.random() - 0.5) * 6 - 1,
+    speed: 0.3 + Math.random() * 0.6, size: 0.02 + Math.random() * 0.06, phase: Math.random() * Math.PI * 2,
   });
 }
 
-/* --- Gouttelettes d'impact --- */
 const dropletCount = isMobile ? 16 : 30;
 const dropletGeo = new THREE.SphereGeometry(1, 6, 6);
 const dropletMat = new THREE.MeshBasicMaterial({
-  color: 0xe0b088,
-  transparent: true,
-  opacity: 0,
-  depthWrite: false,
-  blending: THREE.AdditiveBlending,
+  color: 0xe0b088, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending,
 });
 const droplets = new THREE.InstancedMesh(dropletGeo, dropletMat, dropletCount);
 droplets.visible = false;
@@ -561,28 +541,19 @@ for (let i = 0; i < dropletCount; i++){
   const angle = (i / dropletCount) * Math.PI * 2 + Math.random() * 0.4;
   const speed = 1.8 + Math.random() * 1.8;
   dropletData.push({
-    vx: Math.cos(angle) * speed,
-    vy: 2.8 + Math.random() * 2.2,
-    vz: Math.sin(angle) * speed * 0.5,
-    size: 0.04 + Math.random() * 0.05,
-    startY: -3,
+    vx: Math.cos(angle) * speed, vy: 2.8 + Math.random() * 2.2, vz: Math.sin(angle) * speed * 0.5,
+    size: 0.04 + Math.random() * 0.05, startY: -3,
   });
 }
 
 /* ============================================
-   TIMELINE
+   TIMELINE (Inchangée)
    ============================================ */
 const tl = gsap.timeline({
-  scrollTrigger: {
-    trigger: document.body,
-    start: 'top top',
-    end: 'bottom bottom',
-    scrub: 1.2,
-  }
+  scrollTrigger: { trigger: document.body, start: 'top top', end: 'bottom bottom', scrub: 1.2 }
 });
 
 tl
-  /* PHASE 1 */
   .to(beanGroup.rotation, { y: Math.PI * 2, x: 0.4, ease: 'none', duration: 1 }, 0)
   .to(beanGroup.position, { x: START.beanX + 0.6, y: -1.3, z: 0.5, ease: 'none', duration: 1 }, 0)
   .to(beanGroup.scale, { x: 0.85, y: 0.85, z: 0.85, ease: 'none', duration: 1 }, 0)
@@ -590,7 +561,6 @@ tl
   .to(camera, { fov: START.fov - 3, ease: 'power2.inOut', duration: 1, onUpdate: () => camera.updateProjectionMatrix() }, 0)
   .to(lookAtTarget, { x: 0.4, y: -0.3, ease: 'power2.inOut', duration: 1 }, 0)
 
-  /* PHASE 2 — Morphing */
   .to(beanGroup.rotation, { y: Math.PI * 5, x: 0.6, ease: 'power2.in', duration: 0.5 }, 1.2)
   .to(beanGroup.position, { x: 0.3, y: 0, z: 0, ease: 'power2.inOut', duration: 0.5 }, 1.2)
   .to(beanGroup.scale, { x: 1, y: 1, z: 1, ease: 'power2.inOut', duration: 0.5 }, 1.2)
@@ -599,33 +569,24 @@ tl
   .to(lookAtTarget, { x: 0.15, y: 0, ease: 'power2.inOut', duration: 0.6 }, 1.2)
 
   .to(state, { morph: 1, ease: 'power3.inOut', duration: 0.35 }, 1.75)
-
   .to(state, { beanOpacity: 0, ease: 'none', duration: 0.02 }, 2.1)
   .to(state, { globeVisible: true, ease: 'none', duration: 0.02 }, 2.1)
 
   .to(state, { flash: 0.7, ease: 'power2.out', duration: 0.1 }, 2.05)
   .to(state, { flash: 0, ease: 'power2.in', duration: 0.35 }, 2.15)
-  .fromTo(shockRing.scale,
-    { x: 0.5, y: 0.5, z: 0.5 },
-    { x: 7, y: 7, z: 7, ease: 'power3.out', duration: 0.5 }, 2.1)
-  .fromTo(ringMat,
-    { opacity: 0 },
-    { opacity: 0.6, ease: 'power2.out', duration: 0.08 }, 2.1)
+  .fromTo(shockRing.scale, { x: 0.5, y: 0.5, z: 0.5 }, { x: 7, y: 7, z: 7, ease: 'power3.out', duration: 0.5 }, 2.1)
+  .fromTo(ringMat, { opacity: 0 }, { opacity: 0.6, ease: 'power2.out', duration: 0.08 }, 2.1)
   .to(ringMat, { opacity: 0, ease: 'power2.in', duration: 0.4 }, 2.18)
 
-  /* PHASE 3 — Globe */
   .to(globeGroup.rotation, { y: Math.PI * 0.9, ease: 'none', duration: 1 }, 2.5)
   .to(cameraBase, { z: 4.4, x: 0.5, y: -0.1, ease: 'power1.inOut', duration: 1 }, 2.5)
   .to(camera, { fov: 40, ease: 'power1.inOut', duration: 1, onUpdate: () => camera.updateProjectionMatrix() }, 2.5)
   .to(lookAtTarget, { x: 0.3, y: 0, ease: 'power1.inOut', duration: 1 }, 2.5)
 
-  /* PHASE 4 — Retour grain */
   .to(state, { flash: 0.6, ease: 'power2.out', duration: 0.1 }, 3.65)
   .to(state, { flash: 0, ease: 'power2.in', duration: 0.3 }, 3.75)
-
   .to(state, { globeVisible: false, ease: 'none', duration: 0.02 }, 3.75)
   .to(state, { beanOpacity: 1, ease: 'none', duration: 0.02 }, 3.75)
-
   .to(state, { morph: 0, ease: 'power3.inOut', duration: 0.35 }, 3.72)
 
   .to(beanGroup.rotation, { y: Math.PI * 7, x: 0.2, ease: 'none', duration: 0.6 }, 4.1)
@@ -637,7 +598,6 @@ tl
   .to(camera, { fov: 50, ease: 'power2.inOut', duration: 0.6, onUpdate: () => camera.updateProjectionMatrix() }, 4.1)
   .to(lookAtTarget, { x: 0.5, y: -0.4, ease: 'power2.inOut', duration: 0.6 }, 4.1)
 
-  /* PHASE 5 — Grain flotte */
   .to(beanGroup.rotation, { y: Math.PI * 9, ease: 'none', duration: 0.6 }, 4.7)
   .to(beanGroup.position, { x: 1.6, y: -1.2, z: -0.3, ease: 'power1.inOut', duration: 0.6 }, 4.7)
   .to(particles.material, { size: 0.04, opacity: 0.5, ease: 'none', duration: 0.6 }, 4.7)
@@ -645,47 +605,36 @@ tl
   .to(camera, { fov: 52, ease: 'power2.inOut', duration: 0.6, onUpdate: () => camera.updateProjectionMatrix() }, 4.7)
   .to(lookAtTarget, { x: 0.2, y: -0.3, ease: 'power2.inOut', duration: 0.6 }, 4.7)
 
-  /* PHASE 6 — CHUTE DU GRAIN */
   .to(beanGroup.position, { y: -14, ease: 'power2.in', duration: 0.7 }, 5.3)
   .to(beanGroup.rotation, { x: 4, y: Math.PI * 12, ease: 'power1.in', duration: 0.7 }, 5.3)
   .set(state, { beanGone: true }, 6.0)
   .set(state, { beanOpacity: 0 }, 6.0)
   .set(beanGroup, { visible: false }, 6.0)
 
-  /* ==========================================
-     PHASE 7 — IMPACT LIQUIDE + MONTÉE
-     ========================================== */
-
-  /* Gouttelettes qui jaillissent à l'impact */
   .set(droplets, { visible: true }, 6.0)
   .to(dropletMat, { opacity: 0.95, ease: 'power2.out', duration: 0.05 }, 6.0)
   .to(dropletMat, { opacity: 0, ease: 'power2.in', duration: 0.9 }, 6.5)
   .set(droplets, { visible: false }, 7.4)
 
-  /* Impact : ondulation dans le shader */
   .set(liquidMat.uniforms.uImpactTime, { value: 0 }, 6.0)
   .to(liquidMat.uniforms.uImpactTime, { value: 3, ease: 'power1.out', duration: 2 }, 6.0)
 
-  /* Agitation : forte au début, décroît lentement */
   .set(liquidMat.uniforms.uAgitation, { value: 1.5 }, 6.0)
   .to(liquidMat.uniforms.uAgitation, { value: 0.3, ease: 'power2.out', duration: 3.5 }, 6.0)
 
-  /* Liquide apparaît et monte */
   .set(liquid, { visible: true }, 6.0)
   .to(liquidMat.uniforms.uProgress, { value: 1, ease: 'power2.out', duration: 1.5 }, 6.0)
   .to(liquid.position, { y: -3.5, ease: 'power2.out', duration: 1.5 }, 6.0)
 
-  /* Bulles apparaissent */
-    .set(bubbles, { visible: true }, 6.2)
+  .set(bubbles, { visible: true }, 6.2)
   .to(bubbleMat, { opacity: 0.55, ease: 'power2.out', duration: 1 }, 6.2)
   
-  /* Caméra recule */
   .to(cameraBase, { z: 8.5, x: 0, y: 0.5, ease: 'power2.inOut', duration: 1.5 }, 6.0)
   .to(camera, { fov: 55, ease: 'power2.inOut', duration: 1.5, onUpdate: () => camera.updateProjectionMatrix() }, 6.0)
   .to(lookAtTarget, { x: 0, y: -1.5, ease: 'power2.inOut', duration: 1.5 }, 6.0);
 
 /* ============================================
-   INTERACTIONS
+   INTERACTIONS & LOOP
    ============================================ */
 const raycaster = new THREE.Raycaster();
 const pointerNDC = new THREE.Vector2();
@@ -780,9 +729,6 @@ addEventListener('resize', () => {
   renderer.setSize(sizes.w, sizes.h);
 });
 
-/* ============================================
-   LOOP
-   ============================================ */
 const clock = new THREE.Clock();
 
 function tick(){
@@ -840,19 +786,18 @@ function tick(){
   particles.rotation.x = Math.sin(t * 0.3) * 0.05;
 
   liquidMat.uniforms.uTime.value = t;
+  // Mise à jour de la position de la caméra pour les reflets du liquide
+  liquidMat.uniforms.uCameraPos.value.copy(camera.position);
 
-  /* ===== Gouttelettes ===== */
   if (droplets.visible) {
     const impactT = liquidMat.uniforms.uImpactTime.value;
     if (impactT >= 0) {
       dropletLocalTime += 0.016;
-
       for (let i = 0; i < dropletCount; i++){
         const d = dropletData[i];
         const px = d.vx * dropletLocalTime;
         const py = d.startY + d.vy * dropletLocalTime - 5.5 * dropletLocalTime * dropletLocalTime;
         const pz = d.vz * dropletLocalTime;
-
         dummyPos.set(px, py, pz);
         const scale = Math.max(0.01, 1 - dropletLocalTime * 0.5);
         dummyScale.setScalar(d.size * scale);
@@ -866,24 +811,19 @@ function tick(){
     dropletLocalTime = 0;
   }
 
-  /* ===== Bulles ===== */
   if (bubbles.visible) {
     const liquidY = liquid.position.y;
     const liquidTop = liquidY + 1.2;
-
     for (let i = 0; i < bubbleCount; i++){
       const b = bubbleData[i];
       b.y += b.speed * 0.016 * 2;
-
       if (b.y > liquidTop){
         b.y = liquidY - 1.5 + Math.random() * 0.5;
         b.x = (Math.random() - 0.5) * 12;
         b.z = (Math.random() - 0.5) * 6 - 1;
       }
-
       const wobX = Math.sin(t * 2 + b.phase) * 0.05;
       const wobZ = Math.cos(t * 1.7 + b.phase) * 0.05;
-
       dummyPos.set(b.x + wobX, b.y, b.z + wobZ);
       dummyScale.setScalar(b.size);
       dummyQuat.set(0, 0, 0, 1);
