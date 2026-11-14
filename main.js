@@ -376,9 +376,10 @@ const liquidMat = new THREE.ShaderMaterial({
     uProgress:     { value: 0 },
     uAgitation:    { value: 1.5 },
     uImpactTime:   { value: -1 },
-    uColor1:       { value: new THREE.Color(0x2a1408) },  // Café très foncé (bas)
-    uColor2:       { value: new THREE.Color(0x6b3a1e) },  // Café moyen
-    uColor3:       { value: new THREE.Color(0xd4a878) },  // Reflet / écume dorée
+    / Café moyen
+       uColor1:       { value: new THREE.Color(0x3d1c0a) },  // Café acajou (plus clair)
+    uColor2:       { value: new THREE.Color(0x9e5224) },  // Cuivré / Caramel (pour les vagues)
+    uColor3:       { value: new THREE.Color(0xf2d1a8) },  // Crème lumineux (pour les reflets)
     uLightPos:     { value: new THREE.Vector3(3, 4, 3) }, // On récupère la position de la Key Light
     uCameraPos:    { value: new THREE.Vector3() },        // Mis à jour dans le tick
   },
