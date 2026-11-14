@@ -371,17 +371,16 @@ const liquidGeo = new THREE.PlaneGeometry(80, 40, 200, 100);
 const liquidMat = new THREE.ShaderMaterial({
   transparent: true,
   depthWrite: false,
-  uniforms: {
+   uniforms: {
     uTime:         { value: 0 },
     uProgress:     { value: 0 },
     uAgitation:    { value: 1.5 },
     uImpactTime:   { value: -1 },
-    / Café moyen
-       uColor1:       { value: new THREE.Color(0x3d1c0a) },  // Café acajou (plus clair)
-    uColor2:       { value: new THREE.Color(0x9e5224) },  // Cuivré / Caramel (pour les vagues)
-    uColor3:       { value: new THREE.Color(0xf2d1a8) },  // Crème lumineux (pour les reflets)
-    uLightPos:     { value: new THREE.Vector3(3, 4, 3) }, // On récupère la position de la Key Light
-    uCameraPos:    { value: new THREE.Vector3() },        // Mis à jour dans le tick
+    uColor1:       { value: new THREE.Color(0x3d1c0a) },  // Café acajou
+    uColor2:       { value: new THREE.Color(0x9e5224) },  // Cuivré / Caramel
+    uColor3:       { value: new THREE.Color(0xf2d1a8) },  // Crème lumineux
+    uLightPos:     { value: new THREE.Vector3(3, 4, 3) }, 
+    uCameraPos:    { value: new THREE.Vector3() },        
   },
   vertexShader: `
     varying vec2 vUv;
